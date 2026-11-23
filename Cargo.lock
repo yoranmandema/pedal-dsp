@@ -2788,12 +2788,18 @@ dependencies = [
  "cpal",
  "dsp-graph",
  "futures-util",
+ "hex",
  "pedal-dsp",
+ "reqwest",
  "rtrb",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
 ]
 
 [[package]]

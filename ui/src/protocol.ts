@@ -143,7 +143,28 @@ export interface ErrorEvent {
   payload: { message: string };
 }
 
-export type ServerMessage = Response | StateEvent | MetersEvent | TunerEvent | ErrorEvent;
+export interface DownloadItem {
+  id: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  received: number;
+  total: number;
+  percent: number; // 0...100
+  local_path: string;
+  error: string | null;
+  retries: number;
+}
+
+export interface DownloadEvent {
+  type: "event";
+  event: "download";
+  payload: DownloadItem;
+}
+
+export function isDownload(msg: ServerMessage): msg is DownloadEvent {
+  return msg.type === "event" && msg.event === "download";
+}
+
+export type ServerMessage = Response | StateEvent | MetersEvent | TunerEvent | DownloadEvent | ErrorEvent;
 
 export function isState(msg: ServerMessage): msg is StateEvent {
   return msg.type === "event" && msg.event === "state";

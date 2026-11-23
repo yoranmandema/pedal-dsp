@@ -17,7 +17,9 @@ use tokio_tungstenite::tungstenite::Message;
 use dsp_graph::{Doc, EdgeDoc, Executor, Graph, NodeDoc, Registry, RoutingEndpoint};
 
 use crate::audio::{read_f32, Cmd, Handle};
-use crate::channels::{master_id, Rig, OUT_MASTER_ID, IN};
+use crate::channels::{master_id, Rig, IN, OUT_MASTER_ID};
+use crate::download::{self, DownloadEvent, DownloadManager};
+use crate::model_index::FullIndex;
 use crate::store::{slugify, Store};
 
 /// Loopback only. Nothing outside this machine can reach the engine.
@@ -50,10 +52,31 @@ pub struct Shared {
     /// Bumped on every successful rebuild. The UI uses it to ignore a stale
     /// snapshot, so an out-of-order delivery can never roll the UI backwards.
     pub rev: AtomicU64,
+    /// The download manager, owned by the engine (the audio thread never
+    /// touches it). Drives the UI's downloads view.
+    pub downloads: DownloadManager,
+    /// The receiver of download events; [`serve_listener`] takes it and
+    /// broadcasts each event to every connected client.
+    pub download_events: Mutex<Option<mpsc::UnboundedReceiver<DownloadEvent>>>,
 }
 
 impl Shared {
-    pub fn new(handle: Handle, registry: Arc<Registry>, source: Arc<AtomicU8>, store: Store) -> Self {
+    pub fn new(
+        handle: Handle,
+        registry: Arc<Registry>,
+        source: Arc<AtomicU8>,
+        store: Store,
+    ) -> Self {
+        let index = match crate::model_index::load_full_index() {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("pedal-engine: error loading model index: {e}");
+                FullIndex::default()
+            }
+        };
+        let index_path = crate::model_index::index_file().map(|p| p.to_owned());
+        let (download_event_tx, download_event_rx) = mpsc::unbounded_channel();
+        let downloads = DownloadManager::new(download_event_tx, index, index_path);
         Self {
             rig: Mutex::new(Rig::default()),
             store: Mutex::new(store),
@@ -66,12 +89,20 @@ impl Shared {
             clients: Mutex::new(Vec::new()),
             bypass: Mutex::new(None),
             rev: AtomicU64::new(0),
+            downloads,
+            download_events: Mutex::new(Some(download_event_rx)),
         }
     }
 
     /// Preset names, sorted, for the state snapshot and `listPresets`.
     fn presets(&self) -> Vec<String> {
-        self.store.lock().unwrap().presets.iter().map(|(n, _)| n.clone()).collect()
+        self.store
+            .lock()
+            .unwrap()
+            .presets
+            .iter()
+            .map(|(n, _)| n.clone())
+            .collect()
     }
 
     fn source_name(&self) -> &'static str {
@@ -195,6 +226,10 @@ fn broadcast(sh: &Shared, text: String, skip: Option<&mpsc::UnboundedSender<Stri
     });
 }
 
+fn format_download_event(ev: &DownloadEvent) -> String {
+    json!({ "type": "event", "event": "download", "payload": ev.item }).to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -205,7 +240,9 @@ fn out_master() -> NodeDoc {
     NodeDoc {
         id: OUT_MASTER_ID.into(),
         block: "util.master".into(),
-        params: [("volume".to_string(), 0.0), ("ceiling".to_string(), -1.0)].into_iter().collect(),
+        params: [("volume".to_string(), 0.0), ("ceiling".to_string(), -1.0)]
+            .into_iter()
+            .collect(),
         bypass: false,
         pos: Some([1320.0, 400.0]),
         model: None,
@@ -288,9 +325,16 @@ fn rebuild(sh: &Shared) -> Result<(), String> {
         .unwrap()
         .channels
         .iter()
-        .flat_map(|c| c.blocks.iter().filter(|b| b.bypass).map(|b| (b.id.clone(), true)))
+        .flat_map(|c| {
+            c.blocks
+                .iter()
+                .filter(|b| b.bypass)
+                .map(|b| (b.id.clone(), true))
+        })
         .collect();
-    sh.handle.push(Cmd::Swap(ex, bypass)).map_err(|e| e.to_string())?;
+    sh.handle
+        .push(Cmd::Swap(ex, bypass))
+        .map_err(|e| e.to_string())?;
     *sh.handle.node_ids.lock().unwrap() = ids;
     *sh.handle.rate_mismatches.lock().unwrap() = Vec::new();
     sh.rev.fetch_add(1, Ordering::Release);
@@ -307,18 +351,40 @@ fn compile(sh: &Shared) -> Result<Executor, String> {
         .build_in_with(&sh.registry, &sh.handle.preset_dir, &resolver)
         .map_err(|e| e.to_string())?;
     // Routings are realised here, at compile time; `to_doc` only carries them.
-    sh.rig.lock().unwrap().apply_routings(&mut g, &sh.registry)?;
+    sh.rig
+        .lock()
+        .unwrap()
+        .apply_routings(&mut g, &sh.registry)?;
     Executor::compile_owned(&mut g, sh.handle.sample_rate, sh.handle.block())
         .map_err(|e| e.to_string())
 }
 
-fn set_param(sh: &Shared, channel: &str, block: &str, param: &str, value: f32) -> Result<(), String> {
+fn set_param(
+    sh: &Shared,
+    channel: &str,
+    block: &str,
+    param: &str,
+    value: f32,
+) -> Result<(), String> {
     let (nidx, pidx) = {
         let rig = sh.rig.lock().unwrap();
-        let ch = rig.channel(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
-        let node = ch.blocks.iter().find(|b| b.id == block).ok_or_else(|| format!("no such block: {block}"))?;
-        let spec = sh.registry.get(&node.block).ok_or_else(|| format!("unknown block type: {}", node.block))?;
-        let pidx = spec.params.iter().position(|p| p.id == param).ok_or_else(|| format!("no such param: {param}"))?;
+        let ch = rig
+            .channel(channel)
+            .ok_or_else(|| format!("no such channel: {channel}"))?;
+        let node = ch
+            .blocks
+            .iter()
+            .find(|b| b.id == block)
+            .ok_or_else(|| format!("no such block: {block}"))?;
+        let spec = sh
+            .registry
+            .get(&node.block)
+            .ok_or_else(|| format!("unknown block type: {}", node.block))?;
+        let pidx = spec
+            .params
+            .iter()
+            .position(|p| p.id == param)
+            .ok_or_else(|| format!("no such param: {param}"))?;
         (sh.handle.node_index(block), pidx)
     };
     let nidx = nidx.ok_or_else(|| format!("block not in the compiled graph: {block}"))?;
@@ -328,19 +394,33 @@ fn set_param(sh: &Shared, channel: &str, block: &str, param: &str, value: f32) -
         let node = ch.blocks.iter_mut().find(|b| b.id == block).unwrap();
         node.params.insert(param.to_string(), value);
     }
-    sh.handle.push(Cmd::SetParam { node: nidx, param: pidx, value }).map_err(|e| e.to_string())?;
+    sh.handle
+        .push(Cmd::SetParam {
+            node: nidx,
+            param: pidx,
+            value,
+        })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn set_master_volume(sh: &Shared, channel: &str, value: f32) -> Result<(), String> {
     let nidx = {
         let mut rig = sh.rig.lock().unwrap();
-        let ch = rig.channel_mut(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
+        let ch = rig
+            .channel_mut(channel)
+            .ok_or_else(|| format!("no such channel: {channel}"))?;
         ch.master_volume = value;
         sh.handle.node_index(&master_id(channel))
     };
     if let Some(nidx) = nidx {
-        sh.handle.push(Cmd::SetParam { node: nidx, param: 0, value }).map_err(|e| e.to_string())?;
+        sh.handle
+            .push(Cmd::SetParam {
+                node: nidx,
+                param: 0,
+                value,
+            })
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -348,13 +428,21 @@ fn set_master_volume(sh: &Shared, channel: &str, value: f32) -> Result<(), Strin
 fn set_bypass(sh: &Shared, channel: &str, block: &str, on: bool) -> Result<(), String> {
     let nidx = {
         let mut rig = sh.rig.lock().unwrap();
-        let ch = rig.channel_mut(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
-        let node = ch.blocks.iter_mut().find(|b| b.id == block).ok_or_else(|| format!("no such block: {block}"))?;
+        let ch = rig
+            .channel_mut(channel)
+            .ok_or_else(|| format!("no such channel: {channel}"))?;
+        let node = ch
+            .blocks
+            .iter_mut()
+            .find(|b| b.id == block)
+            .ok_or_else(|| format!("no such block: {block}"))?;
         node.bypass = on;
         sh.handle.node_index(block)
     };
     if let Some(nidx) = nidx {
-        sh.handle.push(Cmd::SetBypass { node: nidx, on }).map_err(|e| e.to_string())?;
+        sh.handle
+            .push(Cmd::SetBypass { node: nidx, on })
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -390,7 +478,11 @@ fn move_block(sh: &Shared, channel: &str, block: &str, to: usize) -> Result<(), 
     rebuild(sh)
 }
 
-fn create_routing(sh: &Shared, source: RoutingEndpoint, dest: RoutingEndpoint) -> Result<(), String> {
+fn create_routing(
+    sh: &Shared,
+    source: RoutingEndpoint,
+    dest: RoutingEndpoint,
+) -> Result<(), String> {
     {
         let mut rig = sh.rig.lock().unwrap();
         rig.create_routing(&source, &dest)?;
@@ -440,8 +532,14 @@ fn endpoint(args: &Value, key: &str) -> Result<RoutingEndpoint, String> {
 fn set_sources(sh: &Shared, channel: &str, sources: Vec<String>) -> Result<(), String> {
     {
         let mut rig = sh.rig.lock().unwrap();
-        let ch = rig.channel_mut(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
-        ch.sources = if sources.is_empty() { vec![IN.to_string()] } else { sources };
+        let ch = rig
+            .channel_mut(channel)
+            .ok_or_else(|| format!("no such channel: {channel}"))?;
+        ch.sources = if sources.is_empty() {
+            vec![IN.to_string()]
+        } else {
+            sources
+        };
     }
     rebuild(sh)
 }
@@ -449,7 +547,12 @@ fn set_sources(sh: &Shared, channel: &str, sources: Vec<String>) -> Result<(), S
 fn load_preset(sh: &Shared, name: &str) -> Result<(), String> {
     let doc = {
         let store = sh.store.lock().unwrap();
-        store.presets.iter().find(|(n, _)| n == name).map(|(_, d)| d.clone()).ok_or_else(|| format!("no such preset: {name}"))?
+        store
+            .presets
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, d)| d.clone())
+            .ok_or_else(|| format!("no such preset: {name}"))?
     };
     let rig = Rig::from_doc(&doc);
     {
@@ -530,14 +633,20 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
     let b = |k: &str| args.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
 
     match cmd {
-        "getState" | "setParam" | "setMasterVolume" | "setBypass" | "addBlock"
-        | "removeBlock" | "moveBlock" | "setSources" | "createRouting"
-        | "removeRouting" | "setEnabled" | "setGain" | "setInputGain" | "setMasterOutVolume"
-        | "loadPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
+        "getState" | "setParam" | "setMasterVolume" | "setBypass" | "addBlock" | "removeBlock"
+        | "moveBlock" | "setSources" | "createRouting" | "removeRouting" | "setEnabled"
+        | "setGain" | "setInputGain" | "setMasterOutVolume" | "loadPreset" | "setSource"
+        | "savePreset" | "deletePreset" | "renamePreset" => {
             match cmd {
                 "getState" => {}
                 "setParam" => {
-                    set_param(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, &s("param").ok_or("param")?, f("value"))?;
+                    set_param(
+                        sh,
+                        &s("channel").ok_or("channel")?,
+                        &s("block").ok_or("block")?,
+                        &s("param").ok_or("param")?,
+                        f("value"),
+                    )?;
                 }
                 "setMasterVolume" => {
                     set_master_volume(sh, &s("channel").ok_or("channel")?, f("value"))?;
@@ -549,23 +658,46 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
                     *sh.master_out_volume.lock().unwrap() = f("value").clamp(-60.0, 12.0);
                 }
                 "setBypass" => {
-                    set_bypass(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, b("bypass"))?;
+                    set_bypass(
+                        sh,
+                        &s("channel").ok_or("channel")?,
+                        &s("block").ok_or("block")?,
+                        b("bypass"),
+                    )?;
                 }
                 "addBlock" => {
-                    add_block(sh, &s("channel").ok_or("channel")?, &s("type").ok_or("type")?, &s("name").unwrap_or_default())?;
+                    add_block(
+                        sh,
+                        &s("channel").ok_or("channel")?,
+                        &s("type").ok_or("type")?,
+                        &s("name").unwrap_or_default(),
+                    )?;
                 }
                 "removeBlock" => {
-                    remove_block(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?)?;
+                    remove_block(
+                        sh,
+                        &s("channel").ok_or("channel")?,
+                        &s("block").ok_or("block")?,
+                    )?;
                 }
                 "moveBlock" => {
                     let to = args.get("to").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                    move_block(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, to)?;
+                    move_block(
+                        sh,
+                        &s("channel").ok_or("channel")?,
+                        &s("block").ok_or("block")?,
+                        to,
+                    )?;
                 }
                 "setSources" => {
                     let sources: Vec<String> = args
                         .get("sources")
                         .and_then(|v| v.as_array())
-                        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     set_sources(sh, &s("channel").ok_or("channel")?, sources)?;
                 }
@@ -615,6 +747,36 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
             }
             Ok(snapshot(sh))
         }
+        "getModel" => {
+            let id = s("id").ok_or("id")?;
+            sh.downloads
+                .get_model(&id)
+                .map(|r| json!(r))
+                .ok_or_else(|| format!("no such model: {id}"))
+        }
+        "listModels" => Ok(sh.downloads.with_index(|i| {
+            serde_json::to_value(download::list_models(i, args)).unwrap_or_else(|_| json!({}))
+        })),
+        "listDownloads" => Ok(json!({ "downloads": sh.downloads.list() })),
+        "downloadModel" => {
+            let id = s("id").ok_or("id")?;
+            let url = s("url");
+            let outcome = sh
+                .downloads
+                .enqueue(&id, url.as_deref())
+                .map_err(|e| e.to_string())?;
+            let rec = sh.downloads.get_model(&id);
+            Ok(json!({
+                "id": id,
+                "outcome": outcome,
+                "local_path": rec.as_ref().and_then(|r| r.local_path.clone()),
+                "local": rec.as_ref().and_then(|r| r.local.clone()),
+            }))
+        }
+        "cancelDownload" => {
+            let id = s("id").ok_or("id")?;
+            Ok(json!({ "cancelled": sh.downloads.cancel(&id) }))
+        }
         "listPresets" => Ok(json!({ "presets": sh.presets() })),
         "listRoutings" => Ok(list_routings(sh)),
         other => Err(format!("unknown command: {other}")),
@@ -625,14 +787,24 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
 // Server
 // ---------------------------------------------------------------------------
 
-async fn handle_client(ws: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>, sh: Arc<Shared>) {
+async fn handle_client(
+    ws: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    sh: Arc<Shared>,
+) {
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     sh.clients.lock().unwrap().push(tx.clone());
-    eprintln!("pedal-engine: client connected ({} total)", sh.clients.lock().unwrap().len());
+    eprintln!(
+        "pedal-engine: client connected ({} total)",
+        sh.clients.lock().unwrap().len()
+    );
 
     // Greet with a full snapshot so a reconnecting UI never has to ask.
-    if sink.send(Message::Text(state_event(&sh).into())).await.is_err() {
+    if sink
+        .send(Message::Text(state_event(&sh).into()))
+        .await
+        .is_err()
+    {
         return;
     }
 
@@ -691,7 +863,9 @@ async fn meters_loop(sh: Arc<Shared>) {
         }
         let m = &sh.handle.meters;
         let out = read_f32(&m.out_peak);
-        let cpu = read_f32(&m.callback_s) / (crate::audio::MAX_BLOCK as f32 / sh.handle.sample_rate) * 100.0;
+        let cpu = read_f32(&m.callback_s)
+            / (crate::audio::MAX_BLOCK as f32 / sh.handle.sample_rate)
+            * 100.0;
         let xruns = m.xruns.load(Ordering::Relaxed);
         let text = json!({
             "type":"event","event":"meters",
@@ -710,12 +884,18 @@ async fn tuner_loop(sh: Arc<Shared>) {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tick.tick().await;
-        eprintln!("DEBUG tuner_loop: clients={}, now", sh.clients.lock().unwrap().len());
+        eprintln!(
+            "DEBUG tuner_loop: clients={}, now",
+            sh.clients.lock().unwrap().len()
+        );
         if sh.clients.lock().unwrap().is_empty() {
             continue;
         }
         let r = sh.handle.meters.tuner.lock().unwrap().clone();
-        eprintln!("DEBUG tuner_loop: broadcasting active={} freq={:?}", r.active, r.freq);
+        eprintln!(
+            "DEBUG tuner_loop: broadcasting active={} freq={:?}",
+            r.active, r.freq
+        );
         let text = json!({
             "type": "event",
             "event": "tuner",
@@ -728,7 +908,8 @@ async fn tuner_loop(sh: Arc<Shared>) {
                 "clarity": r.clarity,
                 "reference": crate::tuner::REFERENCE_HZ,
             }
-        }).to_string();
+        })
+        .to_string();
         broadcast(&sh, text, None);
     }
 }
@@ -743,7 +924,9 @@ pub async fn serve(sh: Arc<Shared>) -> Result<(), String> {
 /// Split out from [`serve`] so a test (or a Pi whose [`PORT`] is taken) can
 /// bind somewhere else.
 pub async fn serve_port(sh: Arc<Shared>, port: u16) -> Result<(), String> {
-    let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| e.to_string())?;
+    let listener = TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|e| e.to_string())?;
     eprintln!("pedal-engine: ipc listening on ws://127.0.0.1:{port}");
     serve_listener(sh, listener).await
 }
@@ -760,6 +943,15 @@ pub async fn serve_listener(sh: Arc<Shared>, listener: TcpListener) -> Result<()
     );
     tokio::spawn(tuner_loop(sh.clone()));
     tokio::spawn(meters_loop(sh.clone()));
+    let rx = sh.download_events.lock().unwrap().take();
+    if let Some(mut rx) = rx {
+        let sh = sh.clone();
+        tokio::spawn(async move {
+            while let Some(ev) = rx.recv().await {
+                broadcast(&sh, format_download_event(&ev), None);
+            }
+        });
+    }
     loop {
         let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
         let sh = sh.clone();

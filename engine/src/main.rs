@@ -29,7 +29,10 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let flag = |name: &str| args.iter().any(|a| a == name);
     let value = |name: &str| {
-        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
     };
     let headless_mode = flag("--headless");
     let port = value("--port")
@@ -77,7 +80,11 @@ async fn main() {
 
     // Pick the devices first: the executor and the audio thread must agree on
     // the sample rate. `--headless` skips this entirely — there is no device.
-    let devices = if headless_mode { None } else { Some(host::pick()) };
+    let devices = if headless_mode {
+        None
+    } else {
+        Some(host::pick())
+    };
     let setup = match &devices {
         Some(d) => Setup {
             sample_rate: d.rate as f32,
@@ -120,7 +127,9 @@ async fn main() {
         let ex = dsp_graph::Executor::compile_owned(&mut g, setup.sample_rate, BLOCK)
             .expect("initial rig compiles");
         *handle.node_ids.lock().unwrap() = ex.node_ids().to_vec();
-        handle.push(Cmd::Swap(ex, Vec::new())).expect("initial swap");
+        handle
+            .push(Cmd::Swap(ex, Vec::new()))
+            .expect("initial swap");
     }
     handle.set_source(2); // silence
 
@@ -130,7 +139,14 @@ async fn main() {
     let mut headless_stats = None;
     let tuner_ring = match devices {
         Some(d) => {
-            let (_ring, tuner_ring) = host::start(&d, cmd_rx, trash_tx, running, meters.clone(), source.clone());
+            let (_ring, tuner_ring) = host::start(
+                &d,
+                cmd_rx,
+                trash_tx,
+                running,
+                meters.clone(),
+                source.clone(),
+            );
             // The audio ring handle is dropped here; the input and output
             // streams are `std::mem::forget`t, so they keep running until the
             // process exits.
@@ -156,19 +172,26 @@ async fn main() {
             // start, so set_source writes to a different AtomicU8 than the one
             // passed to the headless thread. Without this, the tuner ring
             // stays empty and no tuner event reaches the UI.
-            let h = headless::start(setup, cmd_rx, trash_tx, running, meters.clone(), handle.source.clone());
+            let h = headless::start(
+                setup,
+                cmd_rx,
+                trash_tx,
+                running,
+                meters.clone(),
+                handle.source.clone(),
+            );
             headless_stats = Some(h.stats.clone());
             eprintln!("pedal-engine: headless (no audio device), source {name}");
             let tuner_ring = h.tuner_ring.clone();
             _headless = Some(h);
             tuner_ring
         }
-        };
+    };
 
-        pedal_engine::tuner::spawn(tuner_ring, setup.sample_rate, meters.clone());
+    pedal_engine::tuner::spawn(tuner_ring, setup.sample_rate, meters.clone());
 
-        // --- IPC ---------------------------------------------------------------
-        let sh = Arc::new(Shared::new(handle, registry, source, store));
+    // --- IPC ---------------------------------------------------------------
+    let sh = Arc::new(Shared::new(handle, registry, source, store));
     {
         let mut r = sh.rig.lock().unwrap();
         *r = rig;

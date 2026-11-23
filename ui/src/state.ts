@@ -6,7 +6,9 @@ import { createBridge, type Bridge } from "./bridge";
 import { type BlockPayload } from "./dnd";
 import {
   asState,
+  isDownload,
   isMeters,
+  type DownloadItem,
   isState,
   isTuner,
   type Meters,
@@ -46,6 +48,28 @@ export const tuner = signal<Tuner>({
   clarity: 0,
   reference: 440,
 });
+/** The download queue, newest state per model id (from `event: download`). */
+export const downloads = signal<DownloadItem[]>([]);
+
+function upsertDownload(item: DownloadItem): void {
+  const cur = downloads.value;
+  const i = cur.findIndex((d) => d.id === item.id);
+  downloads.value = i < 0 ? [...cur, item] : cur.map((d, j) => (j === i ? item : d));
+}
+
+export function dismissDownload(id: string): void {
+  downloads.value = downloads.value.filter((d) => d.id !== id);
+}
+
+export function cancelDownload(id: string): void {
+  void bridge.request("cancelDownload", { id }).catch(() => {});
+}
+
+/** Queue a download; the detail view calls this with the model's index id. */
+export async function downloadModel(id: string, url?: string): Promise<unknown> {
+  return bridge.request("downloadModel", url ? { id, url } : { id });
+}
+
 /** Whether the tuner modal is open. */
 export const tunerOpen = signal(false);
 /**
@@ -106,7 +130,15 @@ export async function init(): Promise<void> {
     if (isState(msg)) fold(asState(msg.payload));
     else if (isMeters(msg)) meters.value = msg.payload;
     else if (isTuner(msg)) tuner.value = msg.payload;
+    else if (isDownload(msg)) upsertDownload(msg.payload);
   });
+  void bridge
+    .request("listDownloads")
+    .then((r) => {
+      const list = (r as { downloads?: DownloadItem[] }).downloads ?? [];
+      list.forEach(upsertDownload);
+    })
+    .catch(() => {});
   try {
     fold(asState(await bridge.request("getState")));
   } catch (e) {
