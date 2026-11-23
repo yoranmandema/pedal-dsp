@@ -1662,6 +1662,308 @@ impl Block for Tremolo {
         self.lfo.reset();
     }
 }
+
+/// Parametric EQ block (design: `docs/design/effects-parametric-eq.md`).
+///
+/// Six fixed-type bands — low shelf, low peak, high peak, high shelf, high
+/// pass, low pass — cascaded, followed by a global output gain. Each band has
+/// an enable switch; switching a band off inserts an identity biquad at its
+/// position, so off/on toggles are step-free (`s -> s`).
+///
+/// Coefficients are re-computed at the start of every block from
+/// `ctx.sample_rate` (ToneStack pattern). `Biquad::make` clamps `f0` to
+/// `[1 Hz, fs·0.499]` and `Q` to `≥ 0.01`, so a knob slide can never cross
+/// Nyquist mid-drag. `set_coefficients` preserves state (`z1/z2`), so a
+/// parameter change is limited to the filter's natural impulse decay — never
+/// a pop — and a host sample-rate change is correct without any state
+/// migration.
+pub struct ParametricEq {
+    bands: [Biquad; 6],
+}
+
+impl Default for ParametricEq {
+    fn default() -> Self {
+        Self {
+            bands: [Biquad::identity(); 6],
+        }
+    }
+}
+
+impl Block for ParametricEq {
+    fn spec(&self) -> BlockSpec {
+        BlockSpec {
+            id: "tone.eq",
+            name: "Parametric EQ",
+            category: Category::Tone,
+            inputs: vec![PortSpec::audio("in")],
+            outputs: vec![PortSpec::audio("out")],
+            params: vec![
+                ParamSpec {
+                    id: "low_shelf_freq",
+                    name: "Low shelf freq",
+                    unit: Unit::Hertz,
+                    min: 20.0,
+                    max: 200.0,
+                    default: 100.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "low_shelf_gain",
+                    name: "Low shelf gain",
+                    unit: Unit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "low_shelf_enabled",
+                    name: "Low shelf",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "low_peak_freq",
+                    name: "Low peak freq",
+                    unit: Unit::Hertz,
+                    min: 100.0,
+                    max: 2000.0,
+                    default: 300.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "low_peak_gain",
+                    name: "Low peak gain",
+                    unit: Unit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "low_peak_q",
+                    name: "Low peak Q",
+                    unit: Unit::Linear,
+                    min: 0.35,
+                    max: 3.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "low_peak_enabled",
+                    name: "Low peak",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "high_peak_freq",
+                    name: "High peak freq",
+                    unit: Unit::Hertz,
+                    min: 1000.0,
+                    max: 12000.0,
+                    default: 3000.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "high_peak_gain",
+                    name: "High peak gain",
+                    unit: Unit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "high_peak_q",
+                    name: "High peak Q",
+                    unit: Unit::Linear,
+                    min: 0.35,
+                    max: 3.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "high_peak_enabled",
+                    name: "High peak",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "high_shelf_freq",
+                    name: "High shelf freq",
+                    unit: Unit::Hertz,
+                    min: 2000.0,
+                    max: 20000.0,
+                    default: 10000.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "high_shelf_gain",
+                    name: "High shelf gain",
+                    unit: Unit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "high_shelf_enabled",
+                    name: "High shelf",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "high_pass_freq",
+                    name: "High pass freq",
+                    unit: Unit::Hertz,
+                    min: 20.0,
+                    max: 300.0,
+                    default: 80.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "high_pass_enabled",
+                    name: "High pass",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "low_pass_freq",
+                    name: "Low pass freq",
+                    unit: Unit::Hertz,
+                    min: 1000.0,
+                    max: 20000.0,
+                    default: 12000.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "low_pass_enabled",
+                    name: "Low pass",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "output_gain",
+                    name: "Output gain",
+                    unit: Unit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::AmpGain,
+                },
+            ],
+            controls_in: vec![],
+            controls_out: vec![],
+        }
+    }
+
+    fn prepare(&mut self, _sr: f32, _max: usize) -> Result<(), BlockError> {
+        // Coefficients are designed per-block in `process`; nothing to do here.
+        Ok(())
+    }
+
+    fn process(&mut self, ctx: &mut BlockCtx<'_>) -> Result<(), BlockError> {
+        let sr = ctx.sample_rate;
+        let bands = &mut self.bands;
+        let p = |i: usize| ctx.param(i);
+
+        // `f0` is clamped inside `Biquad::make`; this separate clamp is a
+        // safety net so no coefficient design can request a frequency above
+        // Nyquist even if the param range were wrong.
+        let f0 = |i: usize| p(i).clamp(1.0, sr * 0.499);
+        let q = |i: usize| p(i).max(0.01);
+
+        // Cascade order: low_shelf -> low_peak -> high_peak -> high_shelf ->
+        // high_pass -> low_pass. Coefficients are designed from the current
+        // (real) parameters at the start of the block, then each band is
+        // processed sample-by-sample. Because `set_coefficients` preserves
+        // state, `z1/z2` carry over between blocks and a parameter change is
+        // limited to the filter's natural impulse decay — never a pop.
+        bands[0].design(BiquadKind::LowShelf, sr, f0(0), 0.707, p(1));
+        bands[1].design(BiquadKind::Peak, sr, f0(3), q(5), p(4));
+        bands[2].design(BiquadKind::Peak, sr, f0(7), q(9), p(8));
+        bands[3].design(BiquadKind::HighShelf, sr, f0(11), 0.707, p(12));
+        bands[4].design(BiquadKind::HighPass, sr, f0(14), 0.707, 0.0);
+        bands[5].design(BiquadKind::LowPass, sr, f0(16), 0.54, 0.0);
+
+        // Enable/disable inserts an identity biquad at the band's position so
+        // switching a band off/on is a step-free `s -> s` insert. The state is
+        // cleared on disable so the identity path reproduces `s` exactly
+        // (no step, no ZIWIPER pop).
+        let g = |i: usize| p(i);
+        let bands = &mut self.bands;
+        if g(2) <= 0.5 {
+            bands[0].reset();
+            bands[0].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+        if g(6) <= 0.5 {
+            bands[1].reset();
+            bands[1].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+        if g(10) <= 0.5 {
+            bands[2].reset();
+            bands[2].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+        if g(13) <= 0.5 {
+            bands[3].reset();
+            bands[3].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+        if g(15) <= 0.5 {
+            bands[4].reset();
+            bands[4].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+        if g(17) <= 0.5 {
+            bands[5].reset();
+            bands[5].set_coefficients(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+        }
+
+        // Apply the global output gain last.
+        let og = pedal_dsp::util::db_to_lin(p(18));
+        let input = ctx.inputs[0];
+        let output = &mut ctx.outputs[0][..];
+        for i in 0..ctx.n {
+            let mut s = input[i];
+            for band in bands.iter_mut() {
+                s = band.process(s);
+            }
+            output[i] = s * og;
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        for band in &mut self.bands {
+            band.reset();
+        }
+    }
+
+    fn latency_samples(&self) -> u32 {
+        0
+    }
+
+    fn rate_mismatch(&self) -> Option<(f64, f32)> {
+        None
+    }
+}
+
 pub fn builtin_registry() -> crate::Registry {
     let mut r = crate::Registry::new();
     r.add::<IoInput>();
@@ -1681,6 +1983,7 @@ pub fn builtin_registry() -> crate::Registry {
     r.add::<Nam>();
     r.add::<Compressor>();
     r.add::<Gate>();
+    r.add::<ParametricEq>();
     r.add::<Tremolo>();
     r.add::<Octaver>();
     r.add::<Chorus>();
