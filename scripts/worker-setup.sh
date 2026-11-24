@@ -15,6 +15,12 @@ CARD_ID="${1:?Usage: source scripts/worker-setup.sh <card-id>}"
 BRANCH="wt/${CARD_ID}"
 TOP="$(git rev-parse --show-toplevel)"
 
+# ── Always use Hermes identity ──
+export GIT_AUTHOR_NAME="Hermes"
+export GIT_AUTHOR_EMAIL="hermes@nousresearch.com"
+export GIT_COMMITTER_NAME="Hermes"
+export GIT_COMMITTER_EMAIL="hermes@nousresearch.com"
+
 # ── Safety: never work on main ──
 if [ "$(git -C "$TOP" branch --show-current)" = "main" ]; then
     echo "FATAL: Workers MUST NEVER work on main."
