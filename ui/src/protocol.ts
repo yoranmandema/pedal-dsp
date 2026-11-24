@@ -107,6 +107,8 @@ export interface Meters {
   out: number;
   cpu: number;
   xruns: number;
+  /** Per-band gain reduction for an active multiband block (absent otherwise). */
+  bands?: ReadonlyArray<{ band: string; gr_db: number; out_db: number }>;
 }
 
 // --- Messages --------------------------------------------------------------
