@@ -20,6 +20,12 @@ BRANCH="wt/${CARD_ID}"
 TOP="$(git rev-parse --show-toplevel)"
 GITHUB_TOKEN="${GITHUB_TOKEN:-$(python "${HOME}/.hermes/tools/github/git-credential-token.py" 2>/dev/null || echo "")}"
 
+# ── Always use Hermes identity ──
+export GIT_AUTHOR_NAME="Hermes"
+export GIT_AUTHOR_EMAIL="hermes@nousresearch.com"
+export GIT_COMMITTER_NAME="Hermes"
+export GIT_COMMITTER_EMAIL="hermes@nousresearch.com"
+
 # ── Pre-flight checks ──
 if [ "$(git -C "$TOP" branch --show-current)" = "main" ]; then
     echo "FATAL: You are in the main checkout. Card work belongs in .worktrees/${CARD_ID}"
