@@ -79,6 +79,27 @@ export interface State {
   inputGain: number;
   /** Global output volume, dB, from the header knob. */
   masterOutVolume: number;
+  /** I/O buffer size, in frames (e.g. 128, 256, 512). */
+  bufferFrames: number;
+  /** Sample rate the engine is running at (48_000, 44_100, …). */
+  sampleRate: number;
+  /** One-way latency in ms, as measured by the engine. */
+  oneWayLatencyMs: number;
+  /** Round-trip latency in ms (the sum of input and output one-way latency). */
+  roundTripLatencyMs: number;
+  /** Looper transport state, 0..4 (Idle 0 / Recording 1 / Playing 2 /
+   * Overdubbing 3 / Stopped 4). Sent on every state event; the UI reads it
+   * for the banner and the trigger buttons. */
+  looper_state?: number;
+}
+
+/** Engine's config endpoint response: the I/O buffer-size config and latency. */
+export interface Config {
+  bufferFrames: number;
+  sampleRate: number;
+  supported: number[];
+  oneWayLatencyMs: number;
+  roundTripLatencyMs: number;
 }
 
 export interface Meters {
@@ -145,28 +166,7 @@ export interface ErrorEvent {
   payload: { message: string };
 }
 
-export interface DownloadItem {
-  id: string;
-  status: "queued" | "running" | "done" | "failed" | "cancelled";
-  received: number;
-  total: number;
-  percent: number; // 0...100
-  local_path: string;
-  error: string | null;
-  retries: number;
-}
-
-export interface DownloadEvent {
-  type: "event";
-  event: "download";
-  payload: DownloadItem;
-}
-
-export function isDownload(msg: ServerMessage): msg is DownloadEvent {
-  return msg.type === "event" && msg.event === "download";
-}
-
-export type ServerMessage = Response | StateEvent | MetersEvent | TunerEvent | DownloadEvent | ErrorEvent;
+export type ServerMessage = Response | StateEvent | MetersEvent | LooperEvent | TunerEvent | ErrorEvent;
 
 export function isState(msg: ServerMessage): msg is StateEvent {
   return msg.type === "event" && msg.event === "state";
@@ -178,6 +178,19 @@ export function isMeters(msg: ServerMessage): msg is MetersEvent {
 
 export function isResponse(msg: ServerMessage): msg is Response {
   return msg.type === "res";
+}
+
+/** Looper position/state event, sent ~10 Hz while the looper is Playing or
+ * Overdubbing. `state` is the engine's looper state (0..4); `frac` is the
+ * fraction of the take already played (0..1). */
+export interface LooperEvent {
+  type: "event";
+  event: "looper";
+  payload: { state: number; frac: number };
+}
+
+export function isLooper(msg: ServerMessage): msg is LooperEvent {
+  return msg.type === "event" && msg.event === "looper";
 }
 
 export function asState(payload: unknown): State {
