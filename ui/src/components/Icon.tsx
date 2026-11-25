@@ -97,6 +97,10 @@ const BLOCK_GLYPHS: Partial<Record<string, JSX.Element>> = {
       <path d="M12 2.8v1.4M12 19.8v1.4M2.8 12h1.4M19.8 12h1.4" />
     </>
   ),
+  // Smart noise gate: a horizontal threshold line with a triangle closing above it.
+  "dynamics.smart_noise_gate": <path d="M3 13h18M7 13V7l5-3 5 3v6" />,
+  // Dynamics compressor: category default.
+  "dynamics.compressor": <path d="M3 19V5M3 19h9l4-9h5" />,
   // Two channels merging into one.
   "util.mix": <path d="M4 8h5l5 4h6M4 16h5l5-4" />,
   // Adder: a sum in a ring.
