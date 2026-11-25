@@ -107,6 +107,9 @@ export interface Meters {
   out: number;
   cpu: number;
   xruns: number;
+  /** 0–100 dB reduction from compressor; optional, set per-block */
+  gateReduction?: number;
+  compressorReduction?: number;
 }
 
 // --- Messages --------------------------------------------------------------
