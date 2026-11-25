@@ -36,6 +36,18 @@ pub fn read_f32(a: &AtomicU32) -> f32 {
     f32::from_bits(a.load(Ordering::Relaxed))
 }
 
+/// One multiband band's latest per-block meter values.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BandMeter {
+    pub band: &'static str,
+    /// Gain reduction in dB (>= 0).
+    pub gr_db: f32,
+    /// Band output peak, dBFS.
+    pub out_db: f32,
+}
+
+const BAND_NAMES: [&str; 4] = ["band_1", "band_2", "band_3", "band_4"];
+
 #[derive(Default)]
 pub struct Meters {
     pub in_peak: AtomicU32,
@@ -52,6 +64,21 @@ pub struct Meters {
     /// reading: `active: false`, `freq: 0.0`, `note: ""`, `octave: 0`,
     /// `cents: 0.0`, `clarity: 0.0`.
     pub tuner: Mutex<TunerReading>,
+}
+
+impl Meters {
+    /// Latest per-band meters, one entry per active band (empty when no
+    /// multiband block is running). The audio thread writes lock-free atoms;
+    /// this reader allocates, so call it from the IPC thread only.
+    pub fn bands(&self) -> Vec<BandMeter> {
+        let n = (dsp_graph::blocks::MULTIBAND_ACTIVE.load(Ordering::Relaxed) as usize).min(4);
+        dsp_graph::blocks::multiband_meters()
+            .iter()
+            .take(n)
+            .enumerate()
+            .map(|(i, (gr, o))| BandMeter { band: BAND_NAMES[i], gr_db: *gr, out_db: *o })
+            .collect()
+    }
 }
 
 /// Commands from the UI to the audio thread.
@@ -658,5 +685,22 @@ mod real_time_benchmark {
             "per-block {per_block:?}, block deadline ~{} ms",
             (block as f64 / sr as f64) * 1_000.0
         );
+    }
+}
+
+#[cfg(test)]
+mod band_meter_tests {
+    use super::*;
+    use dsp_graph::blocks::MULTIBAND_ACTIVE;
+
+    #[test]
+    fn bands_follow_active_count() {
+        let m = Meters::default();
+        MULTIBAND_ACTIVE.store(3, Ordering::Relaxed);
+        let b = m.bands();
+        assert_eq!(b.len(), 3);
+        assert_eq!(b[2].band, "band_3");
+        MULTIBAND_ACTIVE.store(0, Ordering::Relaxed);
+        assert!(m.bands().is_empty());
     }
 }

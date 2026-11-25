@@ -9,6 +9,7 @@
     "dev:e2e": "VITE_ENGINE_URL=ws://127.0.0.1:9400 vite --port 5273 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test:unit": "node --experimental-strip-types --test src/graph/scale.test.ts src/graph/eq.test.ts",
     "cypress:open": "cypress open",
     "cypress:run": "cypress run",
     "test:e2e": "start-server-and-test \"pnpm dev:e2e\" http://localhost:5273 \"pnpm cypress:run\""

@@ -460,8 +460,11 @@ fn compare(a: &(u32, &ModelRecord), b: &(u32, &ModelRecord), sort: Sort) -> Orde
             a.1.metadata.published_at.as_deref(),
             b.1.metadata.published_at.as_deref(),
         ),
-        Sort::Downloads => stat(a.1, |s| s.downloads).cmp(&stat(b.1, |s| s.downloads)),
-        Sort::Favorites => stat(a.1, |s| s.favorites).cmp(&stat(b.1, |s| s.favorites)),
+        // Spec §6: "Most downloaded" and "Most favorited" are **descending**
+        // (highest first), like Newest/Updated. Ascending would make the
+        // no-query default order surface the least-used captures first.
+        Sort::Downloads => stat(b.1, |s| s.downloads).cmp(&stat(a.1, |s| s.downloads)),
+        Sort::Favorites => stat(b.1, |s| s.favorites).cmp(&stat(a.1, |s| s.favorites)),
         Sort::Updated => cmp_timestamp_desc(
             a.1.metadata.updated_at.as_deref(),
             b.1.metadata.updated_at.as_deref(),
@@ -991,6 +994,37 @@ mod tests {
             ids(&page),
             vec!["t3k:1", "t3k:2", "t3k:3", "t3k:4", "t3k:5"]
         );
+    }
+
+    #[test]
+    fn downloads_and_favorites_sorts_put_the_highest_stats_first() {
+        // Spec §6: "Most downloaded" / "Most favorited" are descending.
+        let mut idx = index();
+        for (i, r) in idx.models.iter_mut().enumerate() {
+            let stats = r.metadata.stats.get_or_insert(Stats {
+                favorites: 0,
+                downloads: 0,
+            });
+            stats.downloads = 100 + i as u64 * 10;
+            stats.favorites = 200 - i as u64 * 10;
+        }
+        let page = list_models(
+            &idx,
+            &Query {
+                sort: Some(Sort::Downloads),
+                ..Query::default()
+            },
+        );
+        assert_eq!(ids(&page), vec!["t3k:5", "t3k:4", "t3k:3", "t3k:2", "t3k:1"]);
+
+        let page = list_models(
+            &idx,
+            &Query {
+                sort: Some(Sort::Favorites),
+                ..Query::default()
+            },
+        );
+        assert_eq!(ids(&page), vec!["t3k:1", "t3k:2", "t3k:3", "t3k:4", "t3k:5"]);
     }
 
     #[test]

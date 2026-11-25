@@ -231,12 +231,14 @@ async fn killing_the_ui_does_not_disturb_audio() {
 
     // The real server, on an ephemeral port (8737 may be held by a stale
     // engine from an earlier session).
-    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
     *sh.rig.lock().unwrap() = rig.clone();
     *sh.preset.lock().unwrap() = "us-2.10".into();
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(serve_listener(sh.clone(), listener));
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
 
     // The UI: a real WebSocket client.
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))

@@ -8,6 +8,8 @@
 //! across a refused command.
 
 use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
@@ -121,10 +123,12 @@ async fn the_ipc_surface_cannot_add_or_remove_a_channel() {
     let store = Store::discover();
     handle.preset_dir = store.dir.clone();
 
-    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(serve_listener(sh.clone(), listener));
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))
         .await
@@ -176,10 +180,12 @@ async fn an_empty_rig_runs_the_bypass_and_resumes_on_the_first_block() {
     let store = Store::discover();
     handle.preset_dir = store.dir.clone();
 
-    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(serve_listener(sh.clone(), listener));
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))
         .await
@@ -226,4 +232,51 @@ async fn an_empty_rig_runs_the_bypass_and_resumes_on_the_first_block() {
     let state = next_event(&mut ws, "state").await;
     let channels = state["payload"]["channels"].as_array().unwrap();
     assert_eq!(channels.len(), CHANNEL_COUNT, "the slot count never changes");
+}
+
+/// `engine.wait` (and the read-only `engine.status`) are the explicit shutdown
+/// API: the engine stops its audio thread, releases the listener and exits 0
+/// — no shell required to stop it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn engine_wait_and_status_are_the_shutdown_api() {
+    let source = Arc::new(AtomicU8::new(0));
+    let (mut handle, _cmd_rx, _trash_tx, _running) = new_engine(setup(), source.clone());
+    let registry = handle.registry.clone();
+    let store = Store::discover();
+    handle.preset_dir = store.dir.clone();
+
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let port = listener.local_addr().unwrap().port();
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))
+        .await
+        .expect("connect");
+    // The greeting confirms the engine is running.
+    let _greeting = next_event(&mut ws, "state").await;
+
+    // `engine.wait` — the explicit, idempotent shutdown command.
+    ws.send(Message::Text(
+        json!({ "type": "req", "id": 10, "cmd": "engine.wait" }).to_string().into(),
+    ))
+    .await
+    .expect("send");
+    let _wait = next_res(&mut ws, 10).await;
+    assert_eq!(sh.running.load(Ordering::Relaxed), false, "engine.wait sets running=false");
+
+    // `engine.status` — the read-only view.
+    ws.send(Message::Text(
+        json!({ "type": "req", "id": 11, "cmd": "engine.status" }).to_string().into(),
+    ))
+    .await
+    .expect("send");
+    let status = next_res(&mut ws, 11).await;
+    assert_eq!(status["payload"]["status"], "stopped", "status reflects the stop");
+
+    // The engine is stopped; the Shared's shutdown Notify woke the main loop
+    // (the test owns the last Shared clone, so the struct is dropped here).
+    drop(sh);
 }

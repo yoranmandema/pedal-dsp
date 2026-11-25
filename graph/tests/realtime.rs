@@ -6,7 +6,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use dsp_graph::blocks::{Amp, Cab, Delay, Gain, IoInput, IoOutput, Master, MixSum, Overdrive, PitchDelay, Reverb, ToneStack};
+use dsp_graph::blocks::{Amp, Cab, Delay, Gain, IoInput, IoOutput, Master, MixSum, Overdrive, PitchDelay, Reverb, ShimmerReverb, ToneStack};
 use dsp_graph::prelude::*;
 use dsp_graph::{CompileError, Executor, Graph, MAX_PORTS};
 
@@ -129,6 +129,7 @@ fn every_library_block_writes_all_frames_without_allocating() {
         Box::new(Amp::default()),
         Box::new(Cab::default()),
         Box::new(PitchDelay::default()),
+        Box::new(ShimmerReverb::default()),
         Box::new(Master),
     ];
     for mut b in blocks {

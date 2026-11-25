@@ -85,7 +85,7 @@ export function HeaderKnob({
       }}
     >
       <div
-        class="knob relative size-[34px] rounded-full bg-[radial-gradient(circle_at_34%_28%,#454956,#1a1b20_72%)] shadow-knob cursor-ns-resize touch-none"
+        class="knob relative size-[var(--ui-touch)] rounded-full bg-[radial-gradient(circle_at_34%_28%,#454956,#1a1b20_72%)] shadow-knob cursor-ns-resize touch-none"
         style={{ "--angle": `${angle}deg` }}
         onPointerDown={down}
         onPointerMove={move}
@@ -98,8 +98,8 @@ export function HeaderKnob({
         <svg
           class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
           viewBox="0 0 64 64"
-          width={46}
-          height={46}
+          width={56}
+          height={56}
           aria-hidden="true"
         >
           <circle
@@ -135,7 +135,7 @@ export function HeaderKnob({
         />
         {/* Label and readback sit beside the face; they collapse out below
             820 px (the `compact` variant) so only the face remains. */}
-        <span class="flex flex-col gap-0.5 leading-none compact:hidden">
+        <span class="flex flex-col gap-0.5 leading-none compact:hidden pointer-events-none">
           <span class="text-[9px] tracking-[0.6px] text-muted font-semibold uppercase">
             {label}
           </span>

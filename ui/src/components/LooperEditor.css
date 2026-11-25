@@ -1,0 +1,221 @@
+/* The looper transport panel: banner, loop progress, five momentary triggers,
+ * continuous knobs and two toggle chips. Styled with the project's dark theme
+ * and amber accent so a running take is legible at a glance. */
+
+/* Container: single column, fills the editor width, never narrower than its
+ * contents. */
+.looper-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Banner: block name + state word, coloured by category hue. */
+.looper-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.looper-banner-name {
+  font: 600 12px/1 var(--font-sans);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.looper-banner-state {
+  flex: none;
+  min-height: var(--ui-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.looper-banner-state[data-state="RECORDING"],
+.looper-banner-state[data-state="PLAYING"],
+.looper-banner-state[data-state="OVERDUBBING"] {
+  background: var(--color-amber);
+  border: 1px solid var(--color-amber-edge);
+  color: var(--color-amber-ink);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+}
+
+.looper-banner-state[data-state="STOPPED"] {
+  background: var(--color-line-soft);
+  border: 1px solid var(--color-line-soft);
+  color: var(--color-muted);
+}
+
+/* Loop panel: progress bar + remaining time. */
+.looper-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.looper-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.looper-progress-track {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--color-line-soft);
+  overflow: hidden;
+}
+
+.looper-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 0.25rem;
+  background: var(--color-amber);
+  transition: width 0.15s linear;
+}
+
+.looper-progress-fill[data-state="PLAYING"],
+.looper-progress-fill[data-state="OVERDUBBING"] {
+  background: var(--color-amber-hi);
+}
+
+.looper-remaining {
+  flex: none;
+  font: 600 10px/1 var(--font-sans);
+  color: var(--color-muted);
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Five momentary transport triggers. */
+.looper-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.looper-trigger {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.375rem 0.5rem;
+  min-height: var(--ui-touch);
+  border-radius: 0.25rem;
+  font: 600 10px/1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--color-muted);
+  background: var(--color-well);
+  border: 1px solid var(--color-line-soft);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.looper-trigger:hover:not(:disabled) {
+  border-color: var(--color-line-hi);
+  color: var(--color-text);
+}
+
+.looper-trigger:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+.looper-trigger:active {
+  transform: translateY(1px);
+}
+
+.looper-trigger[aria-pressed="true"] {
+  background: var(--color-amber);
+  border-color: var(--color-amber-edge);
+  color: var(--color-amber-ink);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+}
+
+/* Knobs + readout row. */
+.looper-knobs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+/* Toggle chips row. */
+.looper-chips {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.looper-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.375rem 0.5rem;
+  min-height: var(--ui-touch);
+  border-radius: 0.25rem;
+  font: 600 10px/1 var(--font-sans);
+  letter-spacing: 0.4px;
+  color: var(--color-muted);
+  background: var(--color-well);
+  border: 1px solid var(--color-line-soft);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.looper-chip:hover:not(:disabled) {
+  border-color: var(--color-line-hi);
+  color: var(--color-text);
+}
+
+.looper-chip:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+.looper-chip[aria-checked="true"] {
+  background: var(--color-amber);
+  border-color: var(--color-amber-edge);
+  color: var(--color-amber-ink);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+}
+
+/* Mobile: the trigger row wraps to two rows so nothing is pushed off screen. */
+@media (max-width: 599px) {
+  .looper-editor {
+    gap: 0.5rem;
+  }
+
+  .looper-knobs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .looper-trigger {
+    flex: 1 1 25%;
+  }
+}

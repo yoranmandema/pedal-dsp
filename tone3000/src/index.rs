@@ -155,6 +155,16 @@ pub enum Variant {
     A2,
 }
 
+impl Variant {
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            Variant::A1 => "a1",
+            Variant::A2 => "a2",
+            Variant::Custom => "custom",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Author {
     pub name: String,

@@ -399,7 +399,7 @@ fn preset_round_trip_preserves_params() {
                 params: std::collections::BTreeMap::new(),
                 bypass: false,
                 pos: None,
-                model: None,
+                model: None, curve: None,
             },
             dsp_graph::NodeDoc {
                 id: "shimmer".into(),
@@ -417,7 +417,7 @@ fn preset_round_trip_preserves_params() {
                 },
                 bypass: false,
                 pos: None,
-                model: None,
+                model: None, curve: None,
             },
             dsp_graph::NodeDoc {
                 id: "out".into(),
@@ -425,7 +425,7 @@ fn preset_round_trip_preserves_params() {
                 params: std::collections::BTreeMap::new(),
                 bypass: false,
                 pos: None,
-                model: None,
+                model: None, curve: None,
             },
         ],
         edges: vec![

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="188.0mm" height="81.0mm" viewBox="0 0 188.0 81.0">
+<text x="2" y="6" font-family="sans-serif" font-size="4">RIGHT WALL x=188 (view from outside) (top panel edge = top of this drawing) - print at 100% (no scaling)</text>
+<g transform="translate(0,10)"><rect x="0" y="0" width="188.0" height="67.0" fill="none" stroke="#000" stroke-width="0.4"/>
+<circle cx="60" cy="30.0" r="4.75" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M57 30.0H63M60 27.0V33.0" stroke="#06c" stroke-width="0.2"/>
+<text x="62" y="28.0" font-family="sans-serif" font-size="2.6" fill="#06c">INPUT y=60</text>
+<circle cx="146" cy="30.0" r="12.0" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M143 30.0H149M146 27.0V33.0" stroke="#06c" stroke-width="0.2"/>
+<text x="148" y="28.0" font-family="sans-serif" font-size="2.6" fill="#06c">USB-A panel, 24 dia (confirm vs part) y=146</text>
+</g></svg>

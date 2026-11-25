@@ -212,15 +212,25 @@ export function RoutingLines() {
   // --- Context menu: hides itself when the user clicks away ---------------------
   useEffect(() => {
     if (menu === null) return;
-    const onMouseDown = (e: MouseEvent) => {
+    const onMouseDown = (e: PointerEvent) => {
       const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       if (!target) { setMenu(null); return; }
       // Outside the menu and not on a routing line: close it.
       if (!target.closest("[data-menu]") && !target.closest("[data-routing-id]")) setMenu(null);
     };
-    window.addEventListener("mousedown", onMouseDown);
-    return () => window.removeEventListener("mousedown", onMouseDown);
+    window.addEventListener("pointerdown", onMouseDown);
+    return () => window.removeEventListener("pointerdown", onMouseDown);
   }, [menu]);
+
+  // Touch has no right-click: a 500ms press on a line opens the same menu.
+  const pressTimer = useRef<number | undefined>(undefined);
+  const pressStart = (id: string) => (e: PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    const { clientX: x, clientY: y } = e;
+    window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => openMenu(id, x, y), 500);
+  };
+  const pressEnd = () => window.clearTimeout(pressTimer.current);
 
   const openMenu = (id: string, x: number, y: number) => {
     const r = routingAt(id);
@@ -294,7 +304,7 @@ export function RoutingLines() {
                 stroke-width={selected ? 2.5 : 1.5}
                 stroke-dasharray={selected ? undefined : "5 4"}
                 opacity={opacity}
-                class={selected ? undefined : "group-hover:opacity-90"}
+                
                 style={{
                   filter: selected
                     ? "drop-shadow(0 0 6px rgba(232,163,61,0.95))"
@@ -308,10 +318,14 @@ export function RoutingLines() {
                 d={l.d}
                 fill="none"
                 stroke={AMBER}
-                stroke-width={12}
+                stroke-width={28}
                 opacity={0}
                 class="cursor-pointer [pointer-events:stroke]"
                 onClick={() => selectRouting(l.id)}
+                onPointerDown={pressStart(l.id)}
+                onPointerUp={pressEnd}
+                onPointerCancel={pressEnd}
+                onPointerLeave={pressEnd}
                 onContextMenu={(e) => { e.preventDefault(); openMenu(l.id, e.clientX, e.clientY); }}
               >
                 <title>{`Routing ${l.id}`}</title>
@@ -339,7 +353,7 @@ export function RoutingLines() {
         >
           {/* Delete: keyboard, context menu or bar. */}
           <button
-            class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-semibold text-danger-text transition hover:bg-danger-bg"
+            class="flex items-center gap-1.5 rounded-md px-2.5 min-h-[var(--ui-touch)] text-sm font-semibold text-danger-text transition hover:bg-danger-bg"
             title="Delete routing (Delete)"
             onClick={() => deleteRouting()}
           >
@@ -349,7 +363,7 @@ export function RoutingLines() {
 
           {/* Toggle: label reflects the target state; "Disable" while on. */}
           <button
-            class={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-semibold transition ${routing.enabled ? "text-text hover:bg-[#26282f]" : "text-muted hover:text-text hover:bg-[#26282f]"}`}
+            class={`flex items-center gap-1.5 rounded-md px-2.5 min-h-[var(--ui-touch)] text-sm font-semibold transition ${routing.enabled ? "text-text hover:bg-[#26282f]" : "text-muted hover:text-text hover:bg-[#26282f]"}`}
             title={routing.enabled ? "Disable routing" : "Enable routing"}
             onClick={() => toggleRouting()}
           >
@@ -389,7 +403,7 @@ export function RoutingLines() {
         >
           <div class="border-b border-line-soft" />
           <button
-            class="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm text-muted transition hover:bg-[#26282f] hover:text-text"
+            class="flex w-full items-center gap-2 rounded-md px-3 min-h-[var(--ui-touch)] text-left text-sm text-muted transition hover:bg-[#26282f] hover:text-text"
             onClick={() => {
               if (menu.id) void removeRouting(menu.id);
               setMenu(null);
@@ -399,7 +413,7 @@ export function RoutingLines() {
             Delete routing
           </button>
           <button
-            class={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition ${routingAt(menu.id)!.enabled ? "text-text hover:bg-[#26282f]" : "text-muted hover:text-text hover:bg-[#26282f]"}`}
+            class={`flex w-full items-center gap-2 rounded-md px-3 min-h-[var(--ui-touch)] text-left text-sm transition ${routingAt(menu.id)!.enabled ? "text-text hover:bg-[#26282f]" : "text-muted hover:text-text hover:bg-[#26282f]"}`}
             onClick={() => {
               const r = routingAt(menu.id);
               if (r !== null) void setEnabled(menu.id, !r.enabled);

@@ -48,7 +48,11 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
   /** @type {Set<import("ws").WebSocket>} */
   const clients = new Set();
 
+  /** One-way state snapshot, sent to every client on connect and after each
+   *  mutation. */
   const stateEvent = () => JSON.stringify({ type: "event", event: "state", payload: state });
+
+
   const metersEvent = () => JSON.stringify({ type: "event", event: "meters", payload: METERS });
   const tunerEvent = () => {
   // Diagnostic: log the engine's tuner state to a file for the E2E spec to read.
@@ -80,8 +84,22 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
   const commit = () => {
     rev += 1;
     state.rev = rev;
-    return state;
+    return cloneState(state);
   };
+
+  // Deep-clone the rig on each mutation so the UI re-renders: the Preact
+  // signals setter only notifies on reference change, and the engine mutates
+  // the rig in place. Each e2e connection owns its own rig, so the cloned
+  // snapshot is never shared across tests.
+  function cloneState(s) {
+    return {
+      ...s,
+      channels: s.channels.map((c) => ({
+        ...c,
+        blocks: c.blocks.map((b) => ({ ...b, params: { ...b.params } })),
+      })),
+    };
+  }
 
   const uniqueBlockId = (ch, name) => {
     const taken = new Set(ch.blocks.map((b) => b.id));
@@ -131,6 +149,19 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
         if (!p) throw new Error(`no such param: ${args.param}`);
         const value = Number(args.value);
         if (!Number.isFinite(value)) throw new Error(`bad value: ${args.value}`);
+
+        // --- Looper trigger gates: translate the UI's momentary gates into the
+        // engine's looper state machine (docs/looper.md §4). The mock stands in
+        // for pedal-engine while the engine card is not merged yet. */
+        const LOOPER_TRIGS = ["trig_record", "trig_play", "trig_overdub", "trig_stop", "trig_clear"];
+        if (spec.params.some((x) => LOOPER_TRIGS.includes(x.id))) {
+          const last = b._looperLastTrigs ??= {};
+          const wasHeld = last[p.id] >= 0.5;
+          const isHeld = value >= 0.5;
+          if (wasHeld && !isHeld) applyLooperGate(p.id, false); // release
+          else if (!wasHeld && isHeld) applyLooperGate(p.id, true); // press
+          last[p.id] = value;
+        }
         b.params[p.id] = p.kind === "choice" ? Math.round(clamp(value, p.min, p.max)) : clamp(value, p.min, p.max);
         return commit();
       }
@@ -283,7 +314,69 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
         ws.send(tunerEvent());
       }
     }, 50);
+    // Per-connection looper state, so each Cypress `cy.visit()` starts fresh and
+    // a timer from a previous connection cannot advance another client's
+    // playback position (see cypress/e2e/looper.cy.js).
+    let looperState = 0;
+    let looperFrac = 0;
+    let looperFracTimer = null;
 
+    /** Looper event, sent only to a client while the looper is playing. */
+    const looperEvent = () => JSON.stringify({ type: "event", event: "looper", payload: { state: looperState, frac: looperFrac } });
+
+    /** Translate one trigger gate press/release into the looper state machine. */
+    function applyLooperGate(id, rising) {
+      if (rising) {
+        if (looperState === 0) {
+          if (id === "trig_record") looperState = 1;
+          else if (id === "trig_overdub") looperState = 3;
+          else if (id === "trig_play") looperState = 2;
+          else if (id === "trig_stop") looperState = 4;
+          else if (id === "trig_clear") looperState = 4;
+        } else if (looperState === 1) {
+          if (id === "trig_play") looperState = 2;
+          else if (id === "trig_overdub") looperState = 3;
+          else if (id === "trig_stop") looperState = 4;
+        } else if (looperState === 2) {
+          if (id === "trig_overdub") looperState = 3;
+          else if (id === "trig_stop") looperState = 4;
+        } else if (looperState === 3) {
+          if (id === "trig_stop") looperState = 4;
+        } else if (looperState === 4) {
+          if (id === "trig_record") looperState = 1;
+          else if (id === "trig_overdub") looperState = 3;
+          else if (id === "trig_play") looperState = 2;
+          else if (id === "trig_stop") looperState = 4;
+          else if (id === "trig_clear") looperState = 4;
+        }
+        // Stop and Clear, when held, force the loop to STOPPED from any state.
+        if (id === "trig_stop" || id === "trig_clear") looperState = 4;
+        // A rising gate that starts a new take resets the playback position.
+        if ([1, 2, 3].includes(looperState)) {
+          looperFrac = 0;
+          state.looper_state = looperState;
+          state.looper_frac = 0;
+        }
+      } else {
+        // Falling edge: the trigger was released.
+        if (looperState === 1 && id === "trig_record") looperState = 4;
+        else if (looperState === 2 && id === "trig_play") looperState = 4;
+        else if (looperState === 3 && id === "trig_overdub") looperState = 2;
+      }
+      // Keep the snapshot's looper fields in sync so the banner always reflects
+      // the current engine state.
+      state.looper_state = looperState;
+      state.looper_frac = looperFrac;
+    }
+    looperFracTimer = () => {
+      if (looperState === 2 || looperState === 3) {
+        looperFrac += 0.005;
+        if (looperFrac > 1.0) looperFrac = 1.0;
+        ws.send(looperEvent());
+        if (looperFrac >= 1.0) ws.send(looperEvent());
+      }
+    };
+    setInterval(looperFracTimer, 80);
     ws.on("message", (data) => {
       let req;
       try {
@@ -305,6 +398,7 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
 
     const close = () => {
       clearInterval(heartbeat);
+      clearInterval(looperFracTimer);
       clients.delete(ws);
     };
     ws.on("close", close);

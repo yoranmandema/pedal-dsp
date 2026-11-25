@@ -1,0 +1,365 @@
+/* Parametric EQ panel styles.
+ *
+ * Purpose-built CSS for the ParametricEQ panel only. The project keeps one
+ * global stylesheet (ui/src/tailwind.css) for shared components; this file
+ * stays with the EQ implementation so it can land without touching that file.
+ *
+ * Focus: real range-input sliders (no custom SVG knob), labels with units,
+ * keyboard operability (tab + arrow keys), and a responsive layout for a
+ * 7" 800x480 touch display with no hover-only affordances.
+ */
+
+/* --- Slider control -------------------------------------------------- */
+/* A single real range input with a label, unit and value readback. The
+ * range input is the native keyboard-operable slider: Tab to focus, ArrowUp/
+ * ArrowDown / ArrowLeft / ArrowRight to step, Home / End for min/max. */
+.slider-unit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slider-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.slider-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slider-unit {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* The real range input: custom track and thumb, dark theme, 44px touch target
+ * (WCAG 2.5.8) via min-height on the track. No hover-only affordances: the
+ * thumb is always visible and the focus state is visible on keyboard. */
+.slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-line-soft);
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* WebKit / Blink track fill (the portion left of the thumb). */
+.slider-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-amber);
+  border: 3px solid var(--color-bg);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+  cursor: grab;
+  margin-top: -5px;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  background: var(--color-amber-hi);
+}
+
+.slider-input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+
+/* Gecko track and thumb. */
+.slider-input::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-line-soft);
+  border: 0;
+}
+
+.slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-amber);
+  border: 3px solid var(--color-bg);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+  cursor: grab;
+}
+
+.slider-input::-moz-range-thumb:hover {
+  background: var(--color-amber-hi);
+}
+
+/* Focus state: always visible, works with keyboard only (no hover). */
+.slider-input:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+.slider-readout {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Panel layout ---------------------------------------------------- */
+/* Panel identity bar: display name + voice type. */
+.eq-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* Identity bar: display name + voice type. */
+.eq-identity {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 2px var(--space-4) 6px;
+  border-bottom: 1px solid var(--color-line-soft);
+}
+
+.eq-identity-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.3px;
+}
+
+.eq-identity-type {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Main body: six band sections + global gain + curve, in a scrollable column
+ * so the 7" 800x480 touch display never needs horizontal scrolling. */
+.eq-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- Per-band section ----------------------------------------------- */
+.eq-band {
+  border: 1px solid var(--eq-band-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--eq-band-bg);
+}
+
+.eq-band-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--eq-band-border-b);
+  background: var(--color-bg);
+}
+
+.eq-band-name {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Enable switch (unchanged from parent card; now a real checkbox with a
+ * keyboard-focusable label). */
+.eq-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.eq-toggle-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.eq-toggle-track {
+  width: 38px;
+  height: 21px;
+  border-radius: 999px;
+  background: var(--color-line-soft);
+  border: 2px solid var(--color-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.eq-toggle-input:checked + .eq-toggle-track {
+  background: var(--color-amber);
+  border-color: var(--color-amber);
+}
+
+.eq-toggle-input:focus-visible + .eq-toggle-track {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+.eq-toggle-track::after {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  transition: transform 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.eq-toggle-input:checked + .eq-toggle-track::after {
+  transform: translateX(17px);
+}
+
+.eq-toggle-status {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Control cells: frequency (log) + gain + Q, laid out in a wrapping row. */
+.eq-band-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* Each band control: a real slider with label + readback. */
+.eq-cell {
+  flex: 1 1 110px;
+  min-width: 110px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Global output gain --------------------------------------------- */
+.eq-global {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--eq-band-border);
+  border-radius: var(--radius-sm);
+  background: var(--eq-global-bg);
+}
+
+.eq-global-label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* --- Frequency-response curve --------------------------------------- */
+.eq-curve-wrap {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.eq-curve-chart {
+  width: 100%;
+  max-width: 640px;
+  display: block;
+}
+
+.eq-curve-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Accessible legend: the chart is `role="img"`; the legend text is readable
+ * by assistive tech independently (see CurveChart.tsx). */
+.eq-curve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--eq-band-border);
+  background: var(--color-bg);
+}
+
+.eq-curve-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.eq-curve-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}

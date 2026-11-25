@@ -132,3 +132,16 @@ The DSP tests run on the host, so the algorithms can be validated without
 hardware. `pedal-dsp` is `no_std` and allocator-free (const-generic buffers).
 The host-sim and engine unit tests exercise the graph, executor and latency
 path without any audio device.
+
+## Host-side engine registry (multi-instance)
+
+`pedal_engine::registry::Registry` is the host's table of live engines keyed by
+instance id. `open(id, rig)` spawns an engine with its own port and control
+pipe and returns the port; `close(id)` sends `engine.wait` (then kills on
+timeout) without touching other engines. Engine->host events (`Announced`,
+`Closed`) arrive over one `mpsc` channel. Dropping the registry, or the host
+dying (control pipes close -> EOF), shuts every engine down.
+
+Manual orphan check: after closing a shell run `pgrep -fl pedal-engine`; only
+engines of still-open shells should be listed, and `ls /tmp/pedal-engine-*.pid
+/tmp/pedal-reg-*` should show no files for closed instances.

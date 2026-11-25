@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="188.0mm" height="202.0mm" viewBox="0 0 188.0 202.0">
+<text x="2" y="6" font-family="sans-serif" font-size="4">TOP PANEL (view from above) - print at 100% (no scaling)</text>
+<g transform="translate(0,10)"><rect x="0" y="0" width="188.0" height="188.0" fill="none" stroke="#000" stroke-width="0.4"/>
+<rect x="16.0" y="20.0" width="156" height="88" rx="3" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M91 64.0H97M94 61.0V67.0" stroke="#06c" stroke-width="0.2"/>
+<text x="96" y="62.0" font-family="sans-serif" font-size="2.6" fill="#06c">DISPLAY WINDOW 156x88 R3 (x16..172, y80..168)</text>
+<circle cx="47" cy="158.0" r="6.1" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M44 158.0H50M47 155.0V161.0" stroke="#06c" stroke-width="0.2"/>
+<text x="49" y="156.0" font-family="sans-serif" font-size="2.6" fill="#06c">FS_D 12.2</text>
+<circle cx="141" cy="158.0" r="6.1" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M138 158.0H144M141 155.0V161.0" stroke="#06c" stroke-width="0.2"/>
+<text x="143" y="156.0" font-family="sans-serif" font-size="2.6" fill="#06c">FS_U 12.2</text>
+<rect x="82.0" y="151.5" width="24" height="13" rx="3" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M91 158.0H97M94 155.0V161.0" stroke="#06c" stroke-width="0.2"/>
+<text x="96" y="156.0" font-family="sans-serif" font-size="2.6" fill="#06c">OLED window 24x13</text>
+<circle cx="47" cy="136.0" r="4.0" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M44 136.0H50M47 133.0V139.0" stroke="#06c" stroke-width="0.2"/>
+<text x="49" y="134.0" font-family="sans-serif" font-size="2.6" fill="#06c">LED FS_D 8</text>
+<circle cx="141" cy="136.0" r="4.0" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M138 136.0H144M141 133.0V139.0" stroke="#06c" stroke-width="0.2"/>
+<text x="143" y="134.0" font-family="sans-serif" font-size="2.6" fill="#06c">LED FS_U 8</text>
+<circle cx="94" cy="136.0" r="4.0" fill="none" stroke="#c00" stroke-width="0.3"/>
+<path d="M91 136.0H97M94 133.0V139.0" stroke="#06c" stroke-width="0.2"/>
+<text x="96" y="134.0" font-family="sans-serif" font-size="2.6" fill="#06c">LED STATUS 8</text>
+</g></svg>

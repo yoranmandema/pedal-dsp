@@ -43,6 +43,13 @@ pub const BLOCK: usize = 64;
 /// kHz device. Small enough to sit well under the 20 ms target and large
 /// enough to stay stable.
 pub const DEFAULT_IO_BUFFER_FRAMES: u32 = 128;
+
+/// Owned I/O streams. The caller owns the streams (no [`std::mem::forget`]);
+/// dropping them stops the cpal device.
+pub struct Streams {
+    pub input: cpal::Stream,
+    pub output: cpal::Stream,
+}
 /// Fallback ladder for the I/O buffer, smallest first. If the device rejects
 /// the requested size it reports `UnsupportedConfig`, so we try each larger
 /// size below before giving up.
@@ -386,7 +393,7 @@ pub fn start(
     running: Arc<std::sync::atomic::AtomicBool>,
     meters: Arc<Meters>,
     source: Arc<AtomicU8>,
-) -> Result<Arc<Ring>, cpal::Error> {
+) -> Result<(Streams, Arc<Ring>), cpal::Error> {
     let in_channels = d.in_channels;
     let out_channels = d.out_channels;
     let ring = Arc::new(Ring::new(RING_CAPACITY));
@@ -416,7 +423,8 @@ pub fn start(
         build_input::<f32>(&d.in_dev, cfg, in_channels, ring_in.clone(), tuner_in.clone(), meters.clone())
     })?;
     in_stream.play().expect("failed to start input");
-    std::mem::forget(in_stream);
+    // The caller owns the streams; dropping them stops the cpal device. No
+    // `std::mem::forget` here.
 
     let ring_out = ring.clone();
 
@@ -442,7 +450,8 @@ pub fn start(
         other => panic!("unsupported output format {other:?}"),
     }?;
     out_stream.play().expect("failed to start output");
-    std::mem::forget(out_stream);
+    // The caller owns the streams; dropping them stops the cpal device. No
+    // `std::mem::forget` here.
     ring.trim_to(LATENCY_FRAMES);
 
     // Effective I/O latency: one buffer one-way, both directions round trip.
@@ -455,7 +464,7 @@ pub fn start(
         "pedal-engine: I/O latency one-way = {one_way_ms:.2} ms, round-trip = {round_trip_ms:.2} ms @ {} Hz",
         d.rate
     );
-    Ok(tuner_ring)
+    Ok((Streams { input: in_stream, output: out_stream }, tuner_ring))
 }
 
 /// Validate the output device accepts each low-latency buffer size, using a

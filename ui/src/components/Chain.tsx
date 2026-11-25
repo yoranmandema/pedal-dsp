@@ -206,7 +206,7 @@ function EmptyChannel({ channel }: { channel: import("../protocol").Channel }) {
 function AddBlockButton({ channel }: { channel: import("../protocol").Channel }) {
   return (
     <button
-      class="add-block flex-none size-8 rounded-full border border-dashed border-[#3f424d] text-muted hover:text-text hover:border-amber"
+      class="add-block flex-none size-[var(--ui-touch)] grid place-items-center rounded-full border border-dashed border-[#3f424d] text-muted hover:text-text hover:border-amber"
       data-add={channel.id}
       onClick={() => openBlockPicker(channel.id)}
       title="Search and add a block"
@@ -222,9 +222,9 @@ function ChannelHead({ channel }: { channel: import("../protocol").Channel }) {
   const numeral = channel.name.replace(/\D/g, "");
   const inputOn = channel.sources.includes("<in>");
   return (
-    <div class="channel-head flex items-center gap-2 h-8 mb-2">
+    <div class="channel-head flex items-center gap-2 min-h-[var(--ui-touch)] mb-2">
       <span
-        class="channel-chip flex-none w-6 h-6 rounded-md bg-[#1a1b21] border border-line text-[12px] font-semibold tracking-[0.4px] tabular-nums text-muted"
+        class="channel-chip flex-none w-[var(--ui-touch)] h-[var(--ui-touch)] grid place-items-center rounded-md bg-[#1a1b21] border border-line text-[12px] font-semibold tracking-[0.4px] tabular-nums text-muted"
         title={channel.name}
         aria-label={channel.name}
       >
@@ -237,7 +237,7 @@ function ChannelHead({ channel }: { channel: import("../protocol").Channel }) {
       >
         <SpeakerIcon size={16} />
         <input
-          class="w-24"
+          class="w-28 touch-pan-x"
           type="range"
           min={-60}
           max={12}
@@ -252,7 +252,7 @@ function ChannelHead({ channel }: { channel: import("../protocol").Channel }) {
         />
       </div>
       <button
-        class={`channel-src flex-none w-6 h-6 rounded-md bg-[#1a1b21] border border-line grid place-items-center text-muted ${inputOn ? "bg-[#2a2318] border-amber-dim text-amber border-amber-dim" : ""}`}
+        class={`channel-src flex-none w-[var(--ui-touch)] h-[var(--ui-touch)] rounded-md bg-[#1a1b21] border border-line grid place-items-center text-muted ${inputOn ? "bg-[#2a2318] border-amber-dim text-amber border-amber-dim" : ""}`}
         aria-pressed={inputOn}
         title={`${channel.name} input source ${inputOn ? "on" : "off"}`}
         aria-label={`${channel.name} input source`}
@@ -618,10 +618,10 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                 aria-label={b.name}
               >
                 <div
-                  class="card-actions absolute top-1 right-1 flex gap-1 opacity-0 pointer-events-none transition-opacity hover:opacity-100 hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto selected:opacity-100 selected:pointer-events-auto"
+                  class="card-actions absolute top-1 right-1 flex gap-1"
                 >
                   <button
-                    class={`icon-btn bypass absolute top-1 left-1 size-6 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft ${b.bypass ? "bg-amber text-amber-ink border-amber-edge" : ""}`}
+                    class={`icon-btn bypass absolute top-1 left-1 size-6 after:absolute after:-inset-2.5 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft ${b.bypass ? "bg-amber text-amber-ink border-amber-edge" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       void setBypass(channel.id, b.id, !b.bypass);
@@ -633,7 +633,7 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                     <PowerIcon size={14} />
                   </button>
                   <button
-                    class="icon-btn remove absolute top-1 right-1 size-6 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft hover:text-[#ff8a7a] hover:border-[#5a3535]"
+                    class="icon-btn remove absolute top-1 right-1 size-6 after:absolute after:-inset-2.5 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft hover:text-[#ff8a7a] hover:border-[#5a3535]"
                     onClick={(e) => {
                       e.stopPropagation();
                       void removeBlock(channel.id, b.id);
@@ -647,6 +647,14 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                 <span class="block-icon grid place-items-center text-cat">
                   {spec && <BlockIcon type={b.type} category={spec.category} size={32} />}
                 </span>
+                {b.type === "dynamics.multiband_compressor" && (
+                  <span
+                    class="band-chip absolute -top-2 left-1/2 -translate-x-1/2 px-1.5 rounded-full border border-line bg-[#1a1b21] text-[9px] font-semibold leading-[14px] whitespace-nowrap text-cat pointer-events-none"
+                    title={`${Math.min(4, Math.max(2, Math.round(b.params.bands ?? 3)))} bands`}
+                  >
+                    Multiband ({Math.min(4, Math.max(2, Math.round(b.params.bands ?? 3)))}b)
+                  </span>
+                )}
                 <span
                   class={`block-name max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold text-center leading-[1.2] ${b.bypass ? "line-through" : ""}`}
                 >

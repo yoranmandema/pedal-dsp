@@ -119,7 +119,7 @@ export function BlockList({
             <button
               key={b.type}
               class={[
-                "rack-item cat-scope w-full flex items-center gap-2 px-2.5 py-1.75 rounded-md text-left border border-transparent border-l-3 bg-linear-to-r from-cat-soft to-transparent cursor-grab transition-[background-color,border-color,border-left-color] duration-120 hover:bg-panel-2 hover:border-[#3b3e49] hover:border-l-cat phone:flex-none phone:w-[172px] phone:px-2 phone:py-1 touch-none",
+                "rack-item cat-scope w-full flex items-center gap-2 px-2.5 min-h-[var(--ui-touch)] py-1.75 rounded-md text-left border border-transparent border-l-3 bg-linear-to-r from-cat-soft to-transparent cursor-grab transition-[background-color,border-color,border-left-color] duration-120 hover:bg-panel-2 hover:border-[#3b3e49] hover:border-l-cat phone:flex-none phone:w-[172px] phone:px-2 phone:py-1 touch-none portrait:min-h-[var(--ui-touch)]",
                 chosen?.type === b.type ? "border-amber-dim bg-[rgba(232,163,61,0.08)]" : "",
                 drag?.type === b.type ? "dragging border-dashed border-[#4a4d59] opacity-35" : "",
               ]

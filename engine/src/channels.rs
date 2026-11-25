@@ -149,7 +149,7 @@ impl Rig {
             id = format!("{stem}{k}");
             k += 1;
         }
-        let n = NodeDoc { id: id.clone(), block: block.into(), params: BTreeMap::new(), bypass: false, pos: Some(pos), model: None, };
+        let n = NodeDoc { id: id.clone(), block: block.into(), params: BTreeMap::new(), bypass: false, pos: Some(pos), model: None, curve: None, };
         self.channel_mut(channel).expect("channel").blocks.push(n);
         id
     }
@@ -461,7 +461,7 @@ impl Rig {
             block: "util.master".into(),
             params: [("volume".to_string(), self.master_volume), ("ceiling".to_string(), -1.0)].into_iter().collect(),
             bypass: false,
-            pos: Some([1320.0, 400.0]), model: None, }
+            pos: Some([1320.0, 400.0]), model: None, curve: None, }
     }
 
     /// Lay the rig out as a graph the executor can compile.
@@ -477,9 +477,9 @@ impl Rig {
             params: [("gain".to_string(), self.input_gain)].into_iter().collect(),
             bypass: false,
             pos: Some([60.0, 400.0]),
-            model: None,
+            model: None, curve: None,
         });
-        doc.nodes.push(NodeDoc { id: "out".into(), block: "io.output".into(), params: BTreeMap::new(), bypass: false, pos: Some([1400.0, 400.0]), model: None, });
+        doc.nodes.push(NodeDoc { id: "out".into(), block: "io.output".into(), params: BTreeMap::new(), bypass: false, pos: Some([1400.0, 400.0]), model: None, curve: None, });
         // A pedalboard with nothing in it is a *bypass*, not a dead pedal.
         // The summer below needs a channel master to feed it, so without this
         // the sum's inputs would all be tied to silence and the pedal would
@@ -493,7 +493,7 @@ impl Rig {
         }
         // One summing node so every channel master has exactly one wire into
         // the output node (which has a single input port).
-        let mut sum = NodeDoc { id: "sum".into(), block: "util.sum".into(), params: BTreeMap::new(), bypass: false, pos: Some([1250.0, 400.0]), model: None, };
+        let mut sum = NodeDoc { id: "sum".into(), block: "util.sum".into(), params: BTreeMap::new(), bypass: false, pos: Some([1250.0, 400.0]), model: None, curve: None, };
         sum.params.insert("a".into(), 1.0);
         sum.params.insert("b".into(), 1.0);
         sum.params.insert("c".into(), 1.0);
@@ -514,7 +514,7 @@ impl Rig {
                     block: "util.mix".into(),
                     params: BTreeMap::new(),
                     bypass: false,
-                    pos: Some([240.0, y]), model: None, });
+                    pos: Some([240.0, y]), model: None, curve: None, });
             }
             for (i, b) in c.blocks.iter().enumerate() {
                 let mut b = b.clone();
@@ -526,7 +526,7 @@ impl Rig {
                 block: "util.master".into(),
                 params: BTreeMap::new(),
                 bypass: false,
-                pos: Some([400.0 + c.blocks.len() as f32 * 175.0, y]), model: None, };
+                pos: Some([400.0 + c.blocks.len() as f32 * 175.0, y]), model: None, curve: None, };
             master.params.insert("volume".into(), c.master_volume);
             master.params.insert("ceiling".into(), c.master_ceiling);
             doc.nodes.push(master);
@@ -586,7 +586,7 @@ impl Rig {
                 block: "util.gain".into(),
                 params: [("gain".to_string(), -60.0)].into_iter().collect(),
                 bypass: false,
-                pos: Some([1150.0, 200.0 + k as f32 * 60.0]), model: None, });
+                pos: Some([1150.0, 200.0 + k as f32 * 60.0]), model: None, curve: None, });
             doc.edges.push(EdgeDoc { from: ["in".to_string(), "out".into()], to: [id.clone(), "in".into()] });
             doc.edges.push(EdgeDoc { from: [id, "out".into()], to: ["sum".to_string(), port.to_string()] });
         }

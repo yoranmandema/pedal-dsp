@@ -159,7 +159,15 @@ export function createBridge(): Bridge {
   return new WebSocketBridge();
 }
 
+declare global {
+  interface Window {
+    /** Injected by the shell: the loopback URL of *this* shell's own engine. */
+    __PEDAL_ENGINE_URL__?: string;
+  }
+}
+
 function defaultUrl(): string {
+  if (typeof window !== "undefined" && window.__PEDAL_ENGINE_URL__) return window.__PEDAL_ENGINE_URL__;
   const injected = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_ENGINE_URL;
   if (injected) return injected;
@@ -168,5 +176,5 @@ function defaultUrl(): string {
   if (buildTime !== "__ENGINE_URL__") return buildTime;
   // Dev server: same origin, proxied by Vite.
   if (import.meta.env?.DEV) return `${location.origin.replace(/^http/, "ws")}/engine`;
-  return "ws://127.0.0.1:8737";
+  throw new Error("no engine URL: the shell injects window.__PEDAL_ENGINE_URL__ (see docs/RUN-THE-APP.md)");
 }

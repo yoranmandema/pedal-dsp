@@ -195,6 +195,7 @@ be changed from the client.
 | `setSource` | `{source}` | riff / live / silence | full state |
 | `listPresets` | — | — | `{"presets": [...]}` |
 | `loadPreset` | `{name}` | load a preset | full state |
+| `nextPreset` / `prevPreset` | – | step to the neighbouring preset in the sorted list (no-op at either end) | full state |
 | `savePreset` | `{name}` | save the current rig | full state |
 | `deletePreset` | `{name}` | delete a preset | full state |
 | `renamePreset` | `{from, to}` | rename a preset | full state |
@@ -212,6 +213,9 @@ changes state, so the client can keep its current snapshot.
 - `in`, `out`: peak levels, 0..1, held with a fast attack and slow release.
 - `cpu`: percentage of one core used by the DSP, measured over the last second.
 - `xruns`: cumulative buffer underrun count.
+- `bands`: one `{band: "band_1".., gr_db, out_db}` per active band of the
+  multiband compressor (gain reduction dB >= 0, output peak dBFS); empty when
+  no multiband block is in the rig.
 
 20 Hz is enough for a meter; it is not a control path.
 

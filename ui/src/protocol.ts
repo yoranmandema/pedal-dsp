@@ -87,6 +87,10 @@ export interface State {
   oneWayLatencyMs: number;
   /** Round-trip latency in ms (the sum of input and output one-way latency). */
   roundTripLatencyMs: number;
+  /** Looper transport state, 0..4 (Idle 0 / Recording 1 / Playing 2 /
+   * Overdubbing 3 / Stopped 4). Sent on every state event; the UI reads it
+   * for the banner and the trigger buttons. */
+  looper_state?: number;
 }
 
 /** Engine's config endpoint response: the I/O buffer-size config and latency. */
@@ -160,7 +164,7 @@ export interface ErrorEvent {
   payload: { message: string };
 }
 
-export type ServerMessage = Response | StateEvent | MetersEvent | TunerEvent | ErrorEvent;
+export type ServerMessage = Response | StateEvent | MetersEvent | LooperEvent | TunerEvent | ErrorEvent;
 
 export function isState(msg: ServerMessage): msg is StateEvent {
   return msg.type === "event" && msg.event === "state";
@@ -172,6 +176,19 @@ export function isMeters(msg: ServerMessage): msg is MetersEvent {
 
 export function isResponse(msg: ServerMessage): msg is Response {
   return msg.type === "res";
+}
+
+/** Looper position/state event, sent ~10 Hz while the looper is Playing or
+ * Overdubbing. `state` is the engine's looper state (0..4); `frac` is the
+ * fraction of the take already played (0..1). */
+export interface LooperEvent {
+  type: "event";
+  event: "looper";
+  payload: { state: number; frac: number };
+}
+
+export function isLooper(msg: ServerMessage): msg is LooperEvent {
+  return msg.type === "event" && msg.event === "looper";
 }
 
 export function asState(payload: unknown): State {

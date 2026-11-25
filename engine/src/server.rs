@@ -5,20 +5,21 @@
 //! thread did. The audio thread never touches the WebSocket.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use tokio_tungstenite::tungstenite::Message;
 
 use dsp_graph::{Doc, EdgeDoc, Executor, Graph, NodeDoc, Registry, RoutingEndpoint};
 
 use crate::audio::{read_f32, Cmd, Handle};
 use crate::channels::{master_id, Rig, OUT_MASTER_ID, IN};
-use crate::host::{self, BLOCK, LATENCY_FRAMES, DEFAULT_IO_BUFFER_FRAMES, IOBUFFER_FALLBACK, one_way_latency_ms, round_trip_latency_ms};
+use crate::host::{DEFAULT_IO_BUFFER_FRAMES, IOBUFFER_FALLBACK, one_way_latency_ms, round_trip_latency_ms};
+use crate::models::Models;
 use crate::store::{slugify, Store};
 
 /// Loopback only. Nothing outside this machine can reach the engine.
@@ -44,6 +45,11 @@ pub struct Shared {
     /// Sample rate in Hz, `None` keeps the device default.
     pub sample_rate: Mutex<Option<u32>>,
     pub clients: Mutex<Vec<mpsc::UnboundedSender<String>>>,
+    /// The audio thread's running flag. `false` starts the shutdown sequence.
+    pub running: Arc<AtomicBool>,
+    /// Woken when `engine.wait` is received (via `apply`), so the main loop
+    /// drops the streams and listener and returns. Set in `Engine::new`.
+    pub shutdown: Notify,
     /// Cross-channel routings.
     /// The bypass graph for a rig with no blocks in any slot. Built once and
     /// recompiled (cheaply) whenever an empty pedalboard needs an executor, so
@@ -53,10 +59,13 @@ pub struct Shared {
     /// Bumped on every successful rebuild. The UI uses it to ignore a stale
     /// snapshot, so an out-of-order delivery can never roll the UI backwards.
     pub rev: AtomicU64,
+    /// The model-browsing service: the cached index and the `listModels`/
+    /// `getModel`/`refreshIndex`/`downloadModel`/`cancelDownload` commands.
+    pub models: Arc<Models>,
 }
 
 impl Shared {
-    pub fn new(handle: Handle, registry: Arc<Registry>, source: Arc<AtomicU8>, store: Store) -> Self {
+    pub fn new(handle: Handle, registry: Arc<Registry>, source: Arc<AtomicU8>, store: Store, running: Arc<AtomicBool>, models: Arc<Models>) -> Self {
         Self {
             rig: Mutex::new(Rig::default()),
             store: Mutex::new(store),
@@ -67,8 +76,11 @@ impl Shared {
             buffer_frames: Mutex::new(DEFAULT_IO_BUFFER_FRAMES),
             sample_rate: Mutex::new(None),
             clients: Mutex::new(Vec::new()),
+            running,
+            shutdown: Notify::new(),
             bypass: Mutex::new(None),
             rev: AtomicU64::new(0),
+            models,
         }
     }
 
@@ -145,6 +157,12 @@ fn snapshot(sh: &Shared) -> Value {
                             params.insert(p.id.to_string(), json!(v));
                         }
                     }
+                    if b.block == "dist.waveshaper" {
+                        params.insert(
+                            "curve".to_string(),
+                            b.curve.clone().unwrap_or_else(|| dsp_graph::waveshaper::TransferCurve::identity().to_json()),
+                        );
+                    }
                     json!({
                         "id": b.id,
                         "type": b.block,
@@ -218,7 +236,7 @@ fn out_master() -> NodeDoc {
         params: [("volume".to_string(), 0.0), ("ceiling".to_string(), -1.0)].into_iter().collect(),
         bypass: false,
         pos: Some([1320.0, 400.0]),
-        model: None,
+        model: None, curve: None,
     }
 }
 
@@ -235,7 +253,7 @@ fn bypass_doc() -> Doc {
         params: BTreeMap::new(),
         bypass: false,
         pos: Some([60.0, 400.0]),
-        model: None,
+        model: None, curve: None,
     });
     doc.nodes.push(NodeDoc {
         id: "out".into(),
@@ -243,7 +261,7 @@ fn bypass_doc() -> Doc {
         params: BTreeMap::new(),
         bypass: false,
         pos: Some([1400.0, 400.0]),
-        model: None,
+        model: None, curve: None,
     });
     doc.nodes.push(out_master());
     doc.edges.push(EdgeDoc {
@@ -339,6 +357,34 @@ fn set_param(sh: &Shared, channel: &str, block: &str, param: &str, value: f32) -
         node.params.insert(param.to_string(), value);
     }
     sh.handle.push(Cmd::SetParam { node: nidx, param: pidx, value }).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// `setParam` with the composite param `"curve"` (waveshaper transfer curve).
+/// Validated strictly *before* any state changes; the compiled graph is then
+/// rebuilt so the new table is baked off the audio thread and swapped in.
+fn set_curve(sh: &Shared, channel: &str, block: &str, value: &Value) -> Result<(), String> {
+    {
+        let rig = sh.rig.lock().unwrap();
+        let ch = rig.channel(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
+        let node = ch.blocks.iter().find(|b| b.id == block).ok_or_else(|| format!("no such block: {block}"))?;
+        if node.block != "dist.waveshaper" {
+            return Err(format!("block {block} has no curve param"));
+        }
+    }
+    dsp_graph::waveshaper::TransferCurve::from_json(value)?;
+    let prev = {
+        let mut rig = sh.rig.lock().unwrap();
+        let ch = rig.channel_mut(channel).unwrap();
+        let node = ch.blocks.iter_mut().find(|b| b.id == block).unwrap();
+        node.curve.replace(value.clone())
+    };
+    if let Err(e) = rebuild(sh) {
+        let mut rig = sh.rig.lock().unwrap();
+        let ch = rig.channel_mut(channel).unwrap();
+        ch.blocks.iter_mut().find(|b| b.id == block).unwrap().curve = prev;
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -575,11 +621,15 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
         "getState" | "setParam" | "setMasterVolume" | "setBypass" | "addBlock"
         | "removeBlock" | "moveBlock" | "setSources" | "createRouting"
         | "removeRouting" | "setEnabled" | "setGain" | "setInputGain" | "setMasterOutVolume"
-        | "loadPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
+        | "loadPreset" | "nextPreset" | "prevPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
             match cmd {
                 "getState" => {},
                 "setParam" => {
-                    set_param(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, &s("param").ok_or("param")?, f("value"))?;
+                    if s("param").as_deref() == Some("curve") {
+                        set_curve(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, args.get("value").ok_or("value")?)?;
+                    } else {
+                        set_param(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, &s("param").ok_or("param")?, f("value"))?;
+                    }
                 }
                 "setMasterVolume" => {
                     set_master_volume(sh, &s("channel").ok_or("channel")?, f("value"))?;
@@ -627,6 +677,18 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
                 }
                 "loadPreset" => {
                     load_preset(sh, &s("name").ok_or("name")?)?;
+                }
+                "nextPreset" | "prevPreset" => {
+                    // Footswitch stepping: neighbour in the sorted preset list;
+                    // a no-op at either end. Loads via the same block-boundary swap.
+                    let names = sh.presets();
+                    let cur = sh.preset.lock().unwrap().clone();
+                    if let Some(i) = names.iter().position(|n| *n == cur) {
+                        let j = if cmd == "nextPreset" { i + 1 } else { i.wrapping_sub(1) };
+                        if let Some(n) = names.get(j) {
+                            load_preset(sh, n)?;
+                        }
+                    }
                 }
                 "setSource" => {
                     let v = match s("source").as_deref() {
@@ -681,6 +743,25 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
         }
         "listPresets" => Ok(json!({ "presets": sh.presets() })),
         "listRoutings" => Ok(list_routings(sh)),
+        "engine.wait" => {
+            // Idempotent graceful stop: signal the main loop to tear down.
+            sh.running.store(false, Ordering::Relaxed);
+            sh.shutdown.notify_one();
+            Ok(snapshot(sh))
+        }
+        "engine.status" => {
+            let status = if sh.running.load(Ordering::Relaxed) {
+                "running"
+            } else {
+                "stopped"
+            };
+            Ok(json!({ "status": status }))
+        }
+        "listModels" => sh.models.list_models(&args),
+        "getModel" => sh.models.get_model(&s("id").ok_or_else(|| "id".to_string())?),
+        "refreshIndex" => sh.models.refresh_index(),
+        "downloadModel" => sh.models.download_model(&s("id").ok_or_else(|| "id".to_string())?),
+        "cancelDownload" => sh.models.cancel_download(&s("id").ok_or_else(|| "id".to_string())?),
         other => Err(format!("unknown command: {other}")),
     }
 }
@@ -711,7 +792,27 @@ async fn handle_client(ws: tokio_tungstenite::WebSocketStream<tokio::net::TcpStr
                         let cmd = req.get("cmd").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let args = req.get("args").cloned().unwrap_or(json!({}));
                         eprintln!("pedal-engine: <- {cmd}");
-                        match apply(&sh, &cmd, &args) {
+                        // A download fetches model bytes over blocking HTTP. Run
+                        // it on tokio's blocking pool instead of this task:
+                        // `reqwest::blocking` starts its own runtime and panics
+                        // if invoked inside an async one, and either way a slow
+                        // transfer must not stall `listModels` for other clients
+                        // beyond the index lock it holds while writing.
+                        let result = if cmd == "downloadModel" {
+                            let models = sh.models.clone();
+                            let id = args
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            match tokio::task::spawn_blocking(move || models.download_model(&id)).await {
+                                Ok(inner) => inner,
+                                Err(e) => Err(format!("download task failed: {e}")),
+                            }
+                        } else {
+                            apply(&sh, &cmd, &args)
+                        };
+                        match result {
                             Ok(payload) => {
                                 if cmd != "getState" {
                                     // Tell everyone, the requester included. The
@@ -757,9 +858,15 @@ async fn meters_loop(sh: Arc<Shared>) {
         let out = read_f32(&m.out_peak);
         let cpu = read_f32(&m.callback_s) / (crate::audio::MAX_BLOCK as f32 / sh.handle.sample_rate) * 100.0;
         let xruns = m.xruns.load(Ordering::Relaxed);
+        // Per-band gain reduction / output level of the multiband compressor.
+        let bands: Vec<_> = m
+            .bands()
+            .iter()
+            .map(|b| json!({"band": b.band, "gr_db": b.gr_db, "out_db": b.out_db}))
+            .collect();
         let text = json!({
             "type":"event","event":"meters",
-            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns}
+            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns,"bands":bands}
         })
         .to_string();
         broadcast(&sh, text, None);
@@ -809,7 +916,7 @@ pub async fn serve(sh: Arc<Shared>) -> Result<(), String> {
 pub async fn serve_port(sh: Arc<Shared>, port: u16) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| e.to_string())?;
     eprintln!("pedal-engine: ipc listening on ws://127.0.0.1:{port}");
-    serve_listener(sh, listener).await
+    serve_listener(sh, &listener).await
 }
 
 /// Serve on an already-bound listener.
@@ -817,7 +924,7 @@ pub async fn serve_port(sh: Arc<Shared>, port: u16) -> Result<(), String> {
 /// Split out from [`serve`] so a test can bind an ephemeral port instead of
 /// the production [`PORT`] (which a stale engine from an earlier session may
 /// still hold).
-pub async fn serve_listener(sh: Arc<Shared>, listener: TcpListener) -> Result<(), String> {
+pub async fn serve_listener(sh: Arc<Shared>, listener: &TcpListener) -> Result<(), String> {
     eprintln!(
         "pedal-engine: ipc listening on {}",
         listener.local_addr().map_err(|e| e.to_string())?

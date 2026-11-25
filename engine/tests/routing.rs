@@ -6,6 +6,8 @@
 //! downstream connection alone.
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicU8;
 
 use dsp_graph::blocks::builtin_registry;
@@ -534,12 +536,14 @@ async fn routing_commands_over_ipc() {
     handle.preset_dir = store.dir.clone();
 
     let (rig, amp, delay, reverb) = rig_with_two_channels();
-    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
     *sh.rig.lock().unwrap() = rig;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(serve_listener(sh.clone(), listener));
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))
         .await
