@@ -52,7 +52,8 @@ for its job, so stay in your lane:
 - If a product decision is needed, block your own card with `needs_input` (see
   below) before creating cards.
 - Finish with `scripts/kanban-land.sh <your-card-id>` to verify the work and
-  fast-forward it into `main`, then call `kanban_complete`, not review. Only
+  fast-forward it into `main`, then `scripts/kanban-land.sh --verify
+  <your-card-id>` (must say LANDED) before `kanban_complete`, not review. Only
   after the card lands should its dependent children run; they start from the
   updated `main`. The first line of the summary says what will change for the
   user, e.g. "Planned cross-channel routing: 5 build steps queued". List child
@@ -81,7 +82,8 @@ for its job, so stay in your lane:
 - Fix trivial issues yourself (typos, a missing import, a few lines) and commit
   them. That costs less than another round trip.
 - Approve with `scripts/kanban-land.sh <card-id>` to run the checks and fast-forward
-  the approved commits to `main`, then `kanban_complete`. Keep the builder's
+  the approved commits to `main`, confirm with `scripts/kanban-land.sh
+  --verify <card-id>`, then `kanban_complete`. Keep the builder's
   product-owner summary and its "Try it" steps.
 - On `kanban_request_changes`, do not land; the same card worktree returns to its builder.
 - Otherwise call `kanban_request_changes` with a numbered list of specific
@@ -100,6 +102,8 @@ for its job, so stay in your lane:
 
 ### Everyone
 - Work only on your own card.
+- Never call `kanban_complete` unless `scripts/kanban-land.sh --verify
+  <card id>` exits 0. Landing is part of done, not a follow-up.
 - Never run `hermes kanban specify`/`decompose` or reassign cards. Only the
   architect creates cards.
 
@@ -135,6 +139,35 @@ issue in your worktree and rerun. A failed land is a reason to block with
 
 A `request_changes` handoff keeps the same card branch for the builder to fix.
 After a reviewed card is landed, dependent cards start from the updated main.
+
+## Landing is part of done (non-negotiable)
+
+`done` means the work is on `main`. Landing is not an optional follow-up
+anyone can skip. Before **any** `kanban_complete`, from the main checkout run:
+
+    scripts/kanban-land.sh --verify <card id>
+
+- `LANDED` / `LANDED-EMPTY` (exit 0) → you may complete. The summary's last
+  line must state `on main: <short hash>` (the `main` tip it printed).
+- `NOT-LANDED` (exit 1) → do **not** call `kanban_complete`. Land the card
+  (`scripts/kanban-land.sh <card id>` from its worktree). If the land fails,
+  fix and rerun, or block with `needs_input`/`transient` quoting the failure
+  line. A card marked done whose work is not on main is a defect of the
+  board: the next card that builds on "main" silently misses it, and
+  half-landed features (UI without engine) look like broken controls.
+- If a card's content is reapplied onto `main` by hand (graft, cherry-pick,
+  redesign that supersedes it), the same session must either land the branch
+  as an ancestor (`git merge -s ours wt/<card id> -m "record: <card>
+  content already on main"`) or comment the decision on the card. Never
+  leave a done card pointing at work that only exists in a stale branch.
+  If the branch was already deleted, satisfy the gate with an empty commit:
+  `git commit --allow-empty -m "record: <card id> verified on main at
+  <hash> — <why>"` (`--verify` greps main for the card id as its fallback).
+
+A land that dies is loud by design: the scripts stop with a message, never
+half-merge. `agent-env.sh` aborts a conflicting `main` merge instead of
+leaving the worktree half-merged, and `kanban-land.sh` refuses to run over
+an unfinished merge.
 
 ## Commit discipline (non-negotiable)
 - Commit to your card's `wt/<card-id>` branch after every verified step.
@@ -190,7 +223,8 @@ notification. Write it for someone who will open the app and try the change:
 2. **Try it:** the exact command to run the app (see `docs/RUN-THE-APP.md`) and
    what to click, drag or listen for.
 3. **Not done / known limits:** anything left out on purpose.
-4. Last: commit hash(es). Put test results in `metadata`, not in the summary.
+4. Last: commit hash(es) and the required `on main: <short hash>` line (see
+   "Landing is part of done"). Put test results in `metadata`, not in the summary.
 
 Reviewers who complete a card after review must keep this format and carry the
 "Try it" steps forward. Don't replace the summary with "approved".

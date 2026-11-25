@@ -1,6 +1,6 @@
 //! Host reference model: run the pedal's effect chain over a real WAV file.
 //!
-//! This uses the *same* `EffectChain` code as the STM32H723 firmware, so what
+//! This uses the *same* `EffectChain` code as the desktop/shell engine, so what
 //! you hear here is what the pedal will do (minus codec/analogue colour).
 //!
 //! ```bash

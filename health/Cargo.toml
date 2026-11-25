@@ -1,0 +1,10 @@
+[package]
+name = "pedal-health"
+version = "0.1.0"
+edition = "2021"
+description = "Health monitoring for the Pedal DSP Pi deployment: SoC temperature, throttling flags and undervoltage."
+
+[dependencies]
+
+[features]
+default = []

@@ -283,3 +283,29 @@ export function TunerIcon({ size = 16 }: { size?: number }) {
     </Svg>
   );
 }
+
+/** Speaker with a sound wave: the volume indicator. */
+export function SpeakerIcon({ size = 11 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <path d="M4 9v6h4l5 4V5L8 9H4z" />
+      <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5" />
+    </Svg>
+  );
+}
+
+/** Input source: an arrow pointing into a terminal — reuses the `io.input` glyph. */
+export function SourceIcon({ size = 11 }: { size?: number }) {
+  return <Svg size={size}>{BLOCK_GLYPHS["io.input"] ?? GLYPHS.Utility}</Svg>;
+}
+
+/** Jack socket endpoint: a filled dot in a ring. */
+export function PortIcon({ size = 11 }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="7" stroke-opacity="0.45" />
+    </Svg>
+  );
+}
+

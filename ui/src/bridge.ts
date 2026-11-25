@@ -62,8 +62,14 @@ export class WebSocketBridge implements Bridge {
       const entry = this.pending.get(msg.id);
       if (!entry) return;
       this.pending.delete(msg.id);
-      if (msg.ok) entry.resolve(msg.payload);
-      else entry.reject(new Error(msg.error ?? "request failed"));
+      if (msg.ok) {
+        entry.resolve(msg.payload);
+      } else {
+        const e = new Error(msg.error ?? "request failed");
+        entry.reject(e);
+        // eslint-disable-next-line no-console
+        console.error("[bridge] rejected", msg.id, msg.error);
+      }
       return;
     }
     for (const cb of this.listeners) cb(msg);
@@ -153,7 +159,15 @@ export function createBridge(): Bridge {
   return new WebSocketBridge();
 }
 
+declare global {
+  interface Window {
+    /** Injected by the shell: the loopback URL of *this* shell's own engine. */
+    __PEDAL_ENGINE_URL__?: string;
+  }
+}
+
 function defaultUrl(): string {
+  if (typeof window !== "undefined" && window.__PEDAL_ENGINE_URL__) return window.__PEDAL_ENGINE_URL__;
   const injected = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_ENGINE_URL;
   if (injected) return injected;
@@ -162,5 +176,5 @@ function defaultUrl(): string {
   if (buildTime !== "__ENGINE_URL__") return buildTime;
   // Dev server: same origin, proxied by Vite.
   if (import.meta.env?.DEV) return `${location.origin.replace(/^http/, "ws")}/engine`;
-  return "ws://127.0.0.1:8737";
+  throw new Error("no engine URL: the shell injects window.__PEDAL_ENGINE_URL__ (see docs/RUN-THE-APP.md)");
 }

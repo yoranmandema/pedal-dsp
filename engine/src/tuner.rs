@@ -243,16 +243,21 @@ impl Detector {
 /// The thread drains whatever is available from `ring` (up to 2048 samples),
 /// pushes each sample into a `Detector`, and whenever `detect` returns
 /// `Some(r)` publishes `*meters.tuner.lock().unwrap() = r`. It sleeps 20 ms
-/// between drains. It never panics on an empty ring and is detached on
-/// purpose: it keeps running until the process exits.
+/// between drains. It never panics on an empty ring and exits when
+/// `stop` is set (the engine joins it on teardown).
 ///
 /// The tuner ring is strictly SPSC: the producer is the input callback and
 /// the consumer is this thread.
-pub fn spawn(ring: Arc<Ring>, sample_rate: f32, meters: Arc<Meters>) -> thread::JoinHandle<()> {
+pub fn spawn(
+    ring: Arc<Ring>,
+    sample_rate: f32,
+    meters: Arc<Meters>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) -> thread::JoinHandle<()> {
     let detector = Arc::new(Mutex::new(Detector::new(sample_rate)));
     thread::spawn(move || {
         eprintln!("DEBUG tuner_thread: started");
-        loop {
+        while !stop.load(std::sync::atomic::Ordering::Relaxed) {
             let n = ring.available().min(2048);
             if n > 0 {
                 let mut buf = vec![0.0f32; n];

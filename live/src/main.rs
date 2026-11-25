@@ -1,5 +1,5 @@
-//! Live pedal model: the *same* `pedal_dsp::chain::EffectChain` that runs on
-//! the STM32H723, driven in real time from a GUI.
+//! Live host model: the *same* `pedal_dsp::chain::EffectChain` that runs on
+//! the native desktop host, driven in real time from a GUI.
 //!
 //!   * input  = an audio interface (Scarlett 2i2 by default), mono-summed
 //!   * output = CoreAudio (built-in speakers by default)
@@ -617,7 +617,7 @@ impl eframe::App for App {
             .resizable(true)
             .show(ui, |ui| {
                 ui.heading("Pedal DSP — live");
-                ui.label(egui::RichText::new("same code as the STM32H723 firmware").weak());
+                ui.label(egui::RichText::new("same code as the native desktop engine").weak());
                 ui.separator();
 
                 ui.label(egui::RichText::new("Source").strong());

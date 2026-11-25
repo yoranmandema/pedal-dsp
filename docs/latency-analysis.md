@@ -32,7 +32,7 @@ Numbers were taken on the development Mac:
 | **Input device buffer** (cpal default) | 15..4096 | **0.3 .. 85.3 ms** | cpal `BufferSize::Default` = device-preferred; typically ~1024 frames = 21 ms on macOS |
 | **Output device buffer** (cpal default) | 15..4096 | **0.3 .. 85.3 ms** | same range; typically ~1024 frames = 21 ms |
 | **DSP executor per block** | 64 | **1.33 ms** | block size constant; actual CPU is ~0.001 ms/block |
-| **SPSC ring capacity** | 8192 | 170.7 ms | continuously drained each callback → **adds ~0 ms once full** |
+| **SPSC ring capacity** | 128 | ~2.7 ms | continuously drained each callback → **adds ~0 ms once full** |
 | **Ring startup trim** | 1024 | 21.3 ms | discarded only at boot, not ongoing |
 | **Executor algorithmic latency** | 0 | 0 ms | the pitch-delay node's delay is *intentional* sound |
 | **WebSocket / IPC** | — | **0 ms on the audio path** | state + meters only (20 Hz); remote control of the rig, not part of the loop |
@@ -110,7 +110,7 @@ Notes:
   speakers/headphones (see the audio-safety rule). All numbers are **computed
   from the picked cpal device config** and **measured DSP CPU**, which is the
   equivalent, silent measurement channel.
-- No firmware/STM32 work: the H723 path is dormant.
+- No bare-metal controller work: that path is dormant.
 - No Pi measurements: the target is still the Mac for this phase.
 
 ---
@@ -129,4 +129,42 @@ Notes:
 
 ## 8. Commit
 
-- `t_8f7cf6b8`: latency probe example + `docs/latency-analysis.md`
+- `t_8f7cf6b8`: latency probe example + `docs/latency-analysis.md` (parent).
+
+## 9. Per-effect intrinsic latency
+
+Every effect owns only the delay it must; nothing adds lookahead, FFT, or
+convolution on the audio callback, so no effect adds inter-block latency and
+all process in place per block.
+
+| Effect | Declared latency | Max latency @ 48 kHz | Buffer / note |
+|---|---|---|---|
+| Pitch Delay | 380 ms default (20–1000 ms knob) | up to 1000 ms | `FeedbackDelay`; the intentional Rainbow Machine sound |
+| Chorus | 8 ms fixed centre + LFO | ≈ 16 ms peak | `Chorus<1024>` (was `2048`; max mod delay ≈ 768 samples, so the ring is 2 blocks) |
+| Reverb | 0 (tail only) | ≈ 37 ms tail | `FreeverbMono<1760, 605>`; comb tail, no lookahead |
+| Delay | 0 (knob up to 1000 ms) | 0–1000 ms | `FeedbackDelay<60000>`, no lookahead |
+| Octaver | 0 | 0 | phase-invert + octave filters, sample-aligned |
+| Compressor | 0 | 0 | one-pole envelope follower, sample-accurate |
+| Tremolo | 0 | 0 | LFO depth modulation, no delay |
+
+All buffers on the audio callback are lock-free and allocation-free; the only
+cross-thread buffer is the 2-block input→output ring, which drops to silence
+on a slow output instead of buffering forever.
+
+## 10. Verified
+
+- `cargo test --workspace --exclude pedal-shell` → all suites green;
+  `pedal-engine` ring 9 + graph 10 + ui 2 + chorus 4 tests pass.
+- `cargo check -p pedal-engine` and `cargo test -p dsp-graph` green.
+- Per-block budget test: ~1,200 ns per 64-frame block at 48 kHz, far under the
+  block deadline (1.33 ms); the headless cron waits 10 s for the first clean
+  tuner event and no engine stalls on the audio callback.
+- Chorus ring reduced 2048 → 1024 (max modulation delay ≈ 16 ms ≈ 768 samples);
+  the smallest power-of-two that keeps LFO headroom.
+
+## 11. Commit
+
+- `t_53f50ea2`: ring `pop()`/`available()` fix, `RING_CAPACITY` 8192 → 128,
+  `Riff` pre-construction in `AudioThread::new`, per-block budget test,
+  Chorus ring 2048 → 1024, per-effect latency table.
+- `t_8f7cf6b8`: latency probe example + `docs/latency-analysis.md` (parent).

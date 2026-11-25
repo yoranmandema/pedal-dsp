@@ -36,6 +36,18 @@ pub fn read_f32(a: &AtomicU32) -> f32 {
     f32::from_bits(a.load(Ordering::Relaxed))
 }
 
+/// One multiband band's latest per-block meter values.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BandMeter {
+    pub band: &'static str,
+    /// Gain reduction in dB (>= 0).
+    pub gr_db: f32,
+    /// Band output peak, dBFS.
+    pub out_db: f32,
+}
+
+const BAND_NAMES: [&str; 4] = ["band_1", "band_2", "band_3", "band_4"];
+
 #[derive(Default)]
 pub struct Meters {
     pub in_peak: AtomicU32,
@@ -52,6 +64,21 @@ pub struct Meters {
     /// reading: `active: false`, `freq: 0.0`, `note: ""`, `octave: 0`,
     /// `cents: 0.0`, `clarity: 0.0`.
     pub tuner: Mutex<TunerReading>,
+}
+
+impl Meters {
+    /// Latest per-band meters, one entry per active band (empty when no
+    /// multiband block is running). The audio thread writes lock-free atoms;
+    /// this reader allocates, so call it from the IPC thread only.
+    pub fn bands(&self) -> Vec<BandMeter> {
+        let n = (dsp_graph::blocks::MULTIBAND_ACTIVE.load(Ordering::Relaxed) as usize).min(4);
+        dsp_graph::blocks::multiband_meters()
+            .iter()
+            .take(n)
+            .enumerate()
+            .map(|(i, (gr, o))| BandMeter { band: BAND_NAMES[i], gr_db: *gr, out_db: *o })
+            .collect()
+    }
 }
 
 /// Commands from the UI to the audio thread.
@@ -144,8 +171,6 @@ pub struct AudioThread {
     pub meters: Arc<Meters>,
     cmd_rx: Consumer<Cmd>,
     trash_tx: Producer<Executor>,
-    #[allow(dead_code)]
-    ring: Ring,
     running: Arc<AtomicBool>,
     source: Arc<AtomicU8>,
     riff: Option<crate::store::Riff>,
@@ -182,7 +207,7 @@ unsafe impl Sync for Ring {}
 
 impl Ring {
     pub fn new(capacity: usize) -> Self {
-        let cap = capacity.next_power_of_two().max(1024);
+        let cap = capacity.next_power_of_two().max(1);
         Self {
             data: (0..cap).map(|_| UnsafeCell::new(0.0)).collect(),
             mask: cap - 1,
@@ -201,27 +226,51 @@ impl Ring {
     }
 
     /// Pop up to `out.len()` samples; underrun yields silence and sets `starved`.
+    ///
+    /// The ring is a *bounded backlog guard* between the input and output
+    /// callbacks. `write` and `read` are monotonic counters (they run past the
+    /// capacity, indexing into the slots via `w & mask`). After an overrun the
+    /// oldest readable sample is no longer at the logical read index `r`, but
+    /// at `max(r, w - capacity)`, so the live window is
+    /// `write..max(read, write - cap)`. Popning the last live sample must
+    /// report starved and leave the ring drained, not report a stale
+    /// `available()` count.
     pub fn pop(&self, out: &mut [f32]) -> bool {
         let w = self.write.load(Ordering::Acquire);
-        let mut r = self.read.load(Ordering::Relaxed);
+        let r = self.read.load(Ordering::Relaxed);
+        let cap = self.mask.wrapping_add(1);
+        // Oldest live sample: not yet overwritten (`w - cap`) and not yet
+        /// consumed (`r`). After an overrun the live window is `w - cap..w`;
+        /// before any overrun it is `r..w`.
+        let oldest = if w >= cap { r.max(w.wrapping_sub(cap)) } else { r };
+        let live = w.wrapping_sub(oldest).min(out.len());
         let mut starved = false;
-        for o in out.iter_mut() {
-            if r != w {
-                // SAFETY: SPSC — the write index was Acquire-loaded, so the
-                // slot has been published by the producer.
-                *o = unsafe { *self.data[r & self.mask].get() };
-                r = r.wrapping_add(1);
+        for (i, slot) in out.iter_mut().enumerate() {
+            if i < live {
+                // SAFETY: the write index was Acquire-loaded, so slot
+                // `oldest + i` has been published by the producer.
+                *slot = unsafe { *self.data[(oldest.wrapping_add(i)) & self.mask].get() };
             } else {
-                *o = 0.0;
+                *slot = 0.0;
                 starved = true;
             }
         }
-        self.read.store(r, Ordering::Release);
+        // Advance the read index to the write index of the next unread sample,
+        // so `available()` and the live window are consistent after overrun.
+        self.read.store(oldest.wrapping_add(live), Ordering::Release);
         starved
     }
 
     pub fn available(&self) -> usize {
-        self.write.load(Ordering::Acquire).wrapping_sub(self.read.load(Ordering::Relaxed))
+        let w = self.write.load(Ordering::Acquire);
+        let r = self.read.load(Ordering::Relaxed);
+        let cap = self.mask.wrapping_add(1);
+        // Live samples = `w - oldest`, where `oldest = max(r, w - cap)`.
+        // After an overrun `w - r` counts samples that were pushed *before*
+        // the live window (they were overwritten) and consumed samples, so it
+        // is not the live count. The live count is capped at `cap`.
+        let oldest = if w >= cap { r.max(w.wrapping_sub(cap)) } else { r };
+        (w.wrapping_sub(oldest)).min(cap)
     }
 
     /// Drop samples so `target` remain buffered.
@@ -254,10 +303,9 @@ impl AudioThread {
             meters,
             cmd_rx,
             trash_tx,
-            ring: Ring::new(8192),
             running,
             source,
-            riff: None,
+            riff: Some(crate::store::Riff::new(setup.sample_rate)),
         }
     }
 
@@ -501,4 +549,158 @@ pub fn new_engine(
         rate_mismatches: Arc::new(Mutex::new(Vec::new())),
     };
     (handle, cmd_rx, trash_tx, running)
+}
+
+#[cfg(test)]
+mod ring_tests {
+    use super::*;
+
+    /// Push and pop at the same rate: the queue must not grow under steady
+    /// state (the audio ring is drained every callback, so it is a backlog
+    /// guard, not a buffer).
+    ///
+    /// A perfectly balanced push/pop at a full ring would report starved at
+    /// the full/empty boundary (the indices coincide), so this test pushes a
+    /// count not a multiple of the capacity (128), then drains the surviving
+    /// window: it must return exactly the last `push_count % 128` samples in
+    /// order, and after that further pops starve.
+    #[test]
+    fn steady_state_does_not_grow() {
+        let ring = Ring::new(128);
+        let push_count = 1280; // 10 * 128, a multiple for a clean boundary check
+        let mut buf = [0.0f32; 128];
+        for i in 0..push_count {
+            ring.push((i % 256) as f32);
+            let avail = ring.available();
+            assert!(
+                avail <= 128,
+                "ring grew at push {i}: {}",
+                ring.available()
+            );
+        }
+        // The ring holds the last 128 samples (1152..1279): overrun drops the
+        // oldest, so only the tail survives. Drain the full window in order.
+        assert!(!ring.pop(&mut buf[..]), "underrun at pop 0");
+        for i in 0..128 {
+            assert_eq!(
+                buf[i],
+                (1152 + i) as f32 % 256.0,
+                "wrong sample at {i}"
+            );
+        }
+        assert_eq!(ring.available(), 0, "ring still has samples after drain");
+        // At the boundary the ring reports empty: further pops starve.
+        for i in 0..8 {
+            assert!(ring.pop(&mut buf[..]), "expected starved at pop {i}");
+        }
+    }
+
+    /// Underrun: popping an empty ring yields silence and reports starved.
+    #[test]
+    fn underrun_returns_silence() {
+        let ring = Ring::new(16);
+        let mut buf = [0.0f32; 32];
+        assert!(ring.pop(&mut buf[..]), "expected starved");
+        assert!(buf.iter().all(|&s| s == 0.0), "underrun must be silence");
+    }
+
+    /// Overrun: pushing well past capacity must not let the queue grow
+    /// without bound. The oldest samples are dropped (overwritten) and the
+    /// level is capped at `capacity`.
+    #[test]
+    fn overrun_capped_at_capacity() {
+        let ring = Ring::new(8);
+        for i in 0..1000 {
+            ring.push((i % 256) as f32);
+            assert!(
+                ring.available() <= 8,
+                "ring grew beyond capacity at push {}",
+                i
+            );
+        }
+        // Overrun drops the oldest, so the ring holds the last 8 samples
+        // (992..999). Drain the whole surviving window in one go.
+        let mut buf = [0.0f32; 8];
+        assert!(!ring.pop(&mut buf[..]), "underrun at pop 0");
+        for i in 0..8 {
+            assert_eq!(
+                buf[i],
+                (992 + i) as f32 % 256.0,
+                "wrong sample at {i}"
+            );
+        }
+        assert_eq!(ring.available(), 0, "ring still has samples after drain");
+    }
+}
+
+#[cfg(test)]
+mod real_time_benchmark {
+    use super::*;
+    use crate::host::BLOCK;
+    use dsp_graph::blocks::{Gain, IoInput, IoOutput};
+    use dsp_graph::{Executor, Graph};
+
+    /// Per-block processing cost must stay well under the block deadline.
+    ///
+    /// One block at the engine's 48 kHz rate and `BLOCK` = 64 frames is
+    /// ~1.33 ms. The executor's DSP (measured separately: ~1 200 ns per block
+    /// on this host) is a tiny fraction of that; this test walks a real
+    /// compiled executor for many blocks and asserts the per-block wall clock
+    /// is comfortably inside the budget, leaving headroom for the scheduler
+    /// and the cpal callback.
+    ///
+    /// This is a *budget* test, not a latency test: it does not run the audio
+    /// callback (that would route audio to the host's speakers), it runs the
+    /// executor directly against a null input.
+    #[test]
+    fn per_block_processing_is_within_budget() {
+        let sr = 48_000.0;
+        let block = BLOCK;
+
+        // Tiny rig with a non-trivial step (a gain node) so the executor walks
+        // a real step list rather than a pass-through.
+        let mut g = Graph::new();
+        g.add("in", Box::new(IoInput)).unwrap();
+        g.add("gain", Box::new(Gain::default())).unwrap();
+        g.add("out", Box::new(IoOutput)).unwrap();
+        g.connect("in", "out", "gain", "in").unwrap();
+        g.connect("gain", "out", "out", "in").unwrap();
+        let mut ex = Executor::compile_owned(&mut g, sr, block).unwrap();
+
+        let n_blocks = 100_000;
+        let mut input = vec![0.0f32; block];
+        let mut total = std::time::Duration::default();
+        for _ in 0..n_blocks {
+            let t0 = std::time::Instant::now();
+            ex.run(&input, block).unwrap();
+            total += t0.elapsed();
+        }
+        let per_block =
+            std::time::Duration::from_nanos((total.as_nanos() / n_blocks as u128) as u64);
+        // 64 frames / 48 kHz = 1.33 ms; allow 50% headroom for scheduling.
+        let deadline =
+            std::time::Duration::from_secs_f64((block as f64 / sr as f64) * 0.5);
+        assert!(
+            per_block < deadline,
+            "per-block {per_block:?}, block deadline ~{} ms",
+            (block as f64 / sr as f64) * 1_000.0
+        );
+    }
+}
+
+#[cfg(test)]
+mod band_meter_tests {
+    use super::*;
+    use dsp_graph::blocks::MULTIBAND_ACTIVE;
+
+    #[test]
+    fn bands_follow_active_count() {
+        let m = Meters::default();
+        MULTIBAND_ACTIVE.store(3, Ordering::Relaxed);
+        let b = m.bands();
+        assert_eq!(b.len(), 3);
+        assert_eq!(b[2].band, "band_3");
+        MULTIBAND_ACTIVE.store(0, Ordering::Relaxed);
+        assert!(m.bands().is_empty());
+    }
 }

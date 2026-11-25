@@ -2,7 +2,7 @@
 name = "pedal-live"
 version = "0.1.0"
 edition = "2021"
-description = "Live, tweakable model of the STM32H723 pedal — same EffectChain, real-time audio"
+description = "Live host: same EffectChain, real-time audio via cpal"
 
 [dependencies]
 pedal-dsp = { path = "../dsp" }

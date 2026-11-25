@@ -2,7 +2,7 @@
 //!
 //! Everything here is written against `core` only (plus `libm` for the
 //! transcendental functions used at *initialisation* time). The per-sample
-//! hot path uses plain `f32` arithmetic so it is cheap on a Cortex-M7.
+//! hot path uses plain `f32` arithmetic for portability and low cost.
 //!
 //! Modules:
 //! - [`biquad`]  — the workhorse filter (RBJ cookbook + transposed DF2)
@@ -40,6 +40,8 @@ pub mod resample;
 pub mod svf;
 pub mod util;
 pub mod waveshape;
+pub mod fuzz;
+pub mod one_pole;
 
 pub use biquad::{Biquad, BiquadKind, StereoBiquad};
 pub use chain::EffectChain;

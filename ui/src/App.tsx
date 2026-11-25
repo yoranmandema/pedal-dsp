@@ -5,9 +5,14 @@ import { Rack } from "./components/Rack";
 import { Chain } from "./components/Chain";
 import { Editor } from "./components/Editor";
 import { PresetBrowser } from "./components/PresetBrowser";
+import { ModelBrowser } from "./components/ModelBrowser";
 import { AddBlockModal } from "./components/AddBlockModal";
 import { TunerModal } from "./components/TunerModal";
+<<<<<<< HEAD
 import { DownloadsPanel } from "./components/DownloadsPanel";
+=======
+import { FootswitchPanel } from "./components/FootswitchPanel";
+>>>>>>> origin/develop
 import { SelectionRing } from "./selection";
 
 export function App() {
@@ -50,6 +55,8 @@ export function App() {
       <Editor />
       <TunerModal />
       <PresetBrowser />
+      <FootswitchPanel />
+      <ModelBrowser />
       <AddBlockModal />
       <DownloadsPanel />
       {/* Drawn above the chain but outside every scrolling container, so the

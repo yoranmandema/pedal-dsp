@@ -6,7 +6,7 @@
 //!
 //! The pedal is a **mono** device, so the whole chain runs on a single
 //! channel.  That is not just simpler: it halves the delay-line and reverb
-//! memory, which is what makes a ~1.25 s delay affordable on the H723.
+//! memory, which is what makes a ~1.25 s delay affordable on a small target such as the Pi 5.
 //!
 //! Parameters are plain `f32` fields so the control loop can update them
 //! from pots/footswitch without allocating.

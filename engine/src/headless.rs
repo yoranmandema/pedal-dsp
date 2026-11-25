@@ -29,7 +29,7 @@ use rtrb::{Consumer, Producer};
 use crate::audio::{
     read_f32, run_callback, AudioThread, Cmd, Meters, Ring, Setup,
 };
-use crate::host::{BLOCK, LATENCY_FRAMES, RING_CAPACITY};
+use crate::host::{BLOCK, LATENCY_FRAMES, RING_CAPACITY, TUNER_RING_CAPACITY};
 
 /// Simulated device callback, frames. Wider than one block, like a real device.
 pub const CB: usize = 256;
@@ -138,7 +138,7 @@ pub fn start(
     let stats_thread = stats.clone();
     let channels = setup.out_channels.max(1);
     let sample_rate = setup.sample_rate;
-    let tuner_ring = Arc::new(Ring::new(RING_CAPACITY));
+    let tuner_ring = Arc::new(Ring::new(TUNER_RING_CAPACITY));
     let tuner_ring_for_tuner = tuner_ring.clone();
 
     let join = std::thread::spawn(move || {

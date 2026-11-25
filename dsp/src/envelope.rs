@@ -121,6 +121,7 @@ impl Adsr {
 
 /// Tracks the absolute amplitude of the input with separate attack/release
 /// time constants. Output is 0..~1 for a full-scale signal.
+#[derive(Clone, Copy)]
 pub struct EnvelopeFollower {
     attack_coef: f32,
     release_coef: f32,

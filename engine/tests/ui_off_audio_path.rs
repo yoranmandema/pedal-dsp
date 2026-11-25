@@ -36,10 +36,10 @@ use tokio_tungstenite::tungstenite::Message;
 /// The engine runs at 48 kHz; one block is 64 frames = 1.33 ms.
 const SR: f32 = 48_000.0;
 /// Simulated device callback, frames. Wider than one block, like a real device.
-const CB: usize = 256;
+const CB: usize = 64;
 const CH: usize = 2;
 /// Live input buffered before the output callback starts.
-const PREFILL: usize = 2048;
+const PREFILL: usize = 64;
 /// One device period: 256 frames at 48 kHz.
 fn period() -> Duration {
     Duration::from_secs_f32(CB as f32 / SR)
@@ -231,12 +231,14 @@ async fn killing_the_ui_does_not_disturb_audio() {
 
     // The real server, on an ephemeral port (8737 may be held by a stale
     // engine from an earlier session).
-    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    let sh = Arc::new(Shared::new(handle, registry, source, store,
+        Arc::new(AtomicBool::new(true)), Arc::new(pedal_engine::models::Models::new())));
     *sh.rig.lock().unwrap() = rig.clone();
     *sh.preset.lock().unwrap() = "us-2.10".into();
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(serve_listener(sh.clone(), listener));
+    let sh_task = sh.clone();
+    tokio::spawn(async move { serve_listener(sh_task, &listener).await });
 
     // The UI: a real WebSocket client.
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))

@@ -65,6 +65,10 @@ pub struct NodeDoc {
     /// Path to a `.nam` model file (for `mod.nam` blocks).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Transfer-curve payload (`{"points": [[x, y], ...]}`) for
+    /// `dist.waveshaper` blocks. Absent → the block's identity curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<serde_json::Value>,
 }
 
 /// A block in a channel: one end of a cross-channel routing.
@@ -214,6 +218,12 @@ impl Doc {
                     .configure("model", &resolved)
                     .map_err(|e| DocError::Graph(e.to_string()))?;
             }
+            if let Some(curve) = &n.curve {
+                // A corrupt curve is never applied: reject the whole doc.
+                block
+                    .configure("curve", &curve.to_string())
+                    .map_err(|e| DocError::Graph(format!("{}: {e}", n.id)))?;
+            }
             g.add(n.id.clone(), block).map_err(|_| DocError::DuplicateId(n.id.clone()))?;
             for (param, &value) in &n.params {
                 if spec.param_index(param).is_none() {
@@ -262,7 +272,7 @@ impl Doc {
             params: BTreeMap::new(),
             bypass: false,
             pos: Some(pos),
-            model: None,
+            model: None, curve: None,
         });
         id
     }

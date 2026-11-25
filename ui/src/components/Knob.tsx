@@ -9,6 +9,12 @@ interface KnobProps {
   unit?: string;
   format?: (v: number) => string;
   onChange: (v: number) => void;
+  /** Discrete step for keyboard arrows (defaults to `1`). The per-band strip
+   *  passes the schema's `step` so each control snaps to its granularity. */
+  step?: number;
+  /** "log" maps the arc logarithmically (equal perceptual steps); "linear"
+   *  maps the value directly. Defaults to "linear". */
+  curve?: "linear" | "log";
 }
 
 /** Geometry of the indicator ring around the knob face. */
@@ -35,13 +41,23 @@ export function Knob({
   defaultValue,
   unit = "",
   format,
+  step = 1,
   onChange,
+  curve = "linear",
 }: KnobProps) {
   const [dragging, setDragging] = useState(false);
   const start = useRef({ y: 0, v: 0 });
 
   const span = max - min || 1;
-  const t = Math.min(1, Math.max(0, (value - min) / span));
+  let t = Math.min(1, Math.max(0, (value - min) / span));
+  if (curve === "log" && min > 0) {
+    // Log spacing: equal steps of the parameter map to equal steps of the arc,
+    // which is how pitch and time (ms) read off the dial. Guard against min <= 0
+    // (only the linear path is valid there).
+    const logMin = Math.log(min);
+    const logMax = Math.log(max);
+    t = Math.min(1, Math.max(0, (Math.log(value) - logMin) / (logMax - logMin)));
+  }
   // 270 degrees of travel, from -135deg to +135deg.
   const angle = -135 + t * 270;
   const display = format ? format(value) : `${value.toFixed(2)}${unit}`;
@@ -60,11 +76,42 @@ export function Knob({
   };
   const up = () => setDragging(false);
 
+  const handleKeyDown = (e: KeyboardEvent) => {
+    switch (e.key) {
+      case "ArrowUp":
+      case "ArrowRight":
+        e.preventDefault();
+        onChange(Math.min(max, Math.max(min, value + step)));
+        break;
+      case "ArrowDown":
+      case "ArrowLeft":
+        e.preventDefault();
+        onChange(Math.min(max, Math.max(min, value - step)));
+        break;
+      case "Home":
+        e.preventDefault();
+        onChange(min);
+        break;
+      case "End":
+        e.preventDefault();
+        onChange(max);
+        break;
+    }
+  };
+
   return (
     <div class="knob-unit flex flex-col items-center w-full gap-1 p-0">
       <div
         class={`knob relative size-[var(--ui-knob)] rounded-full bg-[radial-gradient(circle_at_34%_28%,#454956,#1a1b20_72%)] shadow-knob cursor-ns-resize touch-none ${dragging ? "dragging" : ""}`}
         style={{ "--angle": `${angle}deg` }}
+        tabIndex={0}
+        role="slider"
+        aria-label={name}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-valuetext={format ? format(value) : `${value.toFixed(2)}${unit}`}
+        onKeyDown={handleKeyDown}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}

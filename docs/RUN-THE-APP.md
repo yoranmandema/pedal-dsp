@@ -12,7 +12,7 @@ cd ~/Documents/Repos/pedal-dsp
 ./shell/run.sh ship    # the real thing: rebuilds and opens Pedal.app
 ```
 
-Both start the engine for you and clear a stale engine off port 8737 first.
+Both start the engine for you and give every window its own engine on a free loopback port (no stale-port cleanup needed).
 
 ## Which one to use
 
@@ -34,7 +34,7 @@ stuff", that is why — not a caching bug.
 Three processes, in this relationship:
 
 ```
-Pedal (the shell)  ──spawns──>  pedal-engine  ──listens──>  ws://127.0.0.1:8737
+Pedal (the shell)  ──spawns──>  pedal-engine  ──listens──>  ws://127.0.0.1:<free port, per shell>
       │                                              ▲
       └──renders the UI in a webview ──connects──────┘
 ```
@@ -170,7 +170,7 @@ alone is enough for shipped mode.
 
 ## Useful facts
 
-- Engine port: **8737**, loopback only.
+- Engine port: a free loopback port per shell (the shell passes `--port`; 8737 is only the default for a bare `pedal-engine`). The shell injects the URL as `window.__PEDAL_ENGINE_URL__`.
 - Engine log: **`/tmp/pedal-engine.log`** (stderr).
 - Shipped bundles: `target/release/bundle/macos/Pedal.app`,
   `target/release/bundle/dmg/Pedal_0.1.0_aarch64.dmg`.
@@ -194,3 +194,11 @@ add-block picker, the signal chain (including both drag interactions), the
 block editor, and keyboard selection. See
 **[docs/E2E-TESTING.md](E2E-TESTING.md)** for what is covered, how to add a
 spec, and how the fake engine works.
+
+## Multiple shells / engine lifecycle
+
+Each shell owns exactly one engine (own port, control pipe, log and pidfile in
+the temp dir, keyed by `shell-<pid>`). On window close / quit it sends
+`engine.wait`, waits 5 s, then kills; if the shell itself dies (even `kill -9`)
+the engine sees the control pipe close and exits. Verify with
+`scripts/verify-multi-shell.sh` (headless, silent): expects 2 / 1 / 0 engines.

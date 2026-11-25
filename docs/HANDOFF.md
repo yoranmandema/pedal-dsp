@@ -44,25 +44,24 @@ The user was leaning **Raspberry Pi 5** and already owns:
 | Latency | The real risk on Linux. NAM's own guidance is 32×4 audio buffers; that is ~2.7 ms at 48 kHz, before the model itself. Needs real measurement on the Pi 5. |
 | Open-source references | **PiPedal**, **Pi-MFX**, **OpenRig**, **coyopedal** — all permissively licensed; read them for architecture, don't vendor them. |
 | Bluetooth MIDI | **Will not work** on a Pi 5 for this use: the built-in BT shares the USB bus with Ethernet and adds jitter. Use the Chocolate over **USB-C wired** (it enumerates as a standard USB-MIDI device). |
-| STM32 path | Still viable and cheaper. `docs/ARCHITECTURE.md` has the full H723 + SGTL5000 design. The DSP library is portable, so nothing is lost by deciding late. |
+| Platform decision | Settled: native VST/standalone + Pi 5 via a USB audio interface. The DSP library is portable, so nothing is lost by deciding late. |
 
-**STM32 H7 is dropped.** The Pi 5 is the target: NAM models are far beyond an
-H7, and the Pi's CPU headroom is the whole point.
+**The bare-metal controller path is dropped.** The Pi 5 is the target: NAM models are far beyond a small MCU, and the Pi's CPU headroom is the whole point.
 
 ### The architectural consequence (already applied)
 
 **The DSP and graph crates have zero platform dependencies.** No ALSA, no
 CoreAudio, no filesystem, no `std::process`. They compile identically for
-macOS (dev), Linux/Pi 5 (deployment) and bare-metal STM32 (alternative
+macOS (dev), Linux/Pi 5 (deployment). The bare-metal controller path is dropped;
 deployment). The platform-specific code lives in thin shells:
 
-| Crate | Platform deps | Mac | Pi 5 | STM32 |
-|---|---|---|---|---|
-| `dsp` (pedal-dsp) | none | ✅ | ✅ | ✅ |
-| `graph` (dsp-graph) | none | ✅ | ✅ | ✅ |
-| `host-sim` | none (CLI) | ✅ | ✅ | — |
-| `live` (pedal-live) | cpal, egui, eframe | ✅ dev rig | ✅ | — |
-| `firmware` | stm32h7xx-hal, defmt | — | — | ✅ |
+| Crate | Platform deps | Mac | Linux/Pi 5 |
+|---|---|---|---|
+| `dsp` (pedal-dsp) | none | ✅ | ✅ |
+| `graph` (dsp-graph) | none | ✅ | ✅ |
+| `host-sim` | none (CLI) | ✅ | ✅ |
+| `live` (pedal-live) | cpal, egui, eframe | ✅ dev rig | ✅ |
+| `firmware` (archived) | — | dropped | dropped |
 
 **This is why the hardware decision can wait.** Nothing downstream cares.
 
@@ -130,14 +129,14 @@ shell/                                Tauri desktop app: embeds ui/, spawns the 
 ui/                                   Preact + TypeScript frontend (shared by every shell)
 presets/                              *.json, shared by engine and host-sim
 
-firmware/                             STM32H723 firmware (separate workspace)
+firmware/                             archived — dropped bare-metal controller
   src/main.rs, audio.rs, board.rs, codec.rs, controls.rs
 
 live/                                 pedal-live — Mac/Pi real-time rig runner
   src/main.rs                         cpal audio I/O + egui/eframe UI
 
 docs/
-  ARCHITECTURE.md                     original STM32 H723 + SGTL5000 design
+  ARCHITECTURE.md                     native architecture overview
   ANALOG-FRONTEND.md                  analogue front-end design
   BUILD-AND-FLASH.md                  firmware build/flash
   PRODUCT-MODEL.md                    ← the product spec (read this)
@@ -157,7 +156,8 @@ cargo test --workspace     →  99 passed, 0 failed
 
 ### What is built and verified
 
-**Hardware target: Raspberry Pi 5.** STM32 H7 is dropped. The current phase is
+**Hardware target: Raspberry Pi 5.** The bare-metal controller path is
+dropped. The current phase is
 **prove the concept on the Mac with a UI**, then move to the Pi.
 
 **`dsp` crate** — a real, tested, no_std DSP library (biquads, SVF, FIR,
@@ -270,7 +270,7 @@ what caught both bugs. Keep using them.
    The Mac numbers (4–8% of one core per rig) suggest the Pi will manage, but
    the callback jitter is the real question.
 7. **Analogue front-end for the Pi.** I2S ADC + DAC (e.g. PCM3060 or a
-   combined codec) — not yet designed. The H723 design in `ANALOG-FRONTEND.md`
+   combined codec) — not yet designed. The analogue front-end design in `ANALOG-FRONTEND.md`
    is the reference for the input conditioning.
 
 ### P2 — polish
@@ -294,7 +294,7 @@ what caught both bugs. Keep using them.
 - **`Unit::Choice(&[&str])`** is a discrete choice; the real value is the
   option index, `min = 0`, `max = len - 1`.
 - **`cargo test --workspace`** builds `dsp`, `graph`, `host-sim`, `app`.
-  `firmware/` and `live/` are separate workspaces (the H723 path, now dormant).
+  `firmware/` is archived; `live/` runs the cpal/egui rig on Mac and Pi 5.
 - **The UI edits a `Rig` (channels of blocks), not a `Graph`.** `Rig::to_doc`
   lays channels out as a graph; `Rig::from_doc` reads a preset back. A
   `util.master` block is the channel's output, never a strip block.

@@ -17,7 +17,14 @@ pub mod channels;
 pub mod download;
 pub mod headless;
 pub mod host;
+<<<<<<< HEAD
+=======
+pub mod lifecycle;
+pub mod registry;
+pub mod models;
+>>>>>>> origin/develop
 pub mod model_index;
+pub mod tuner;
 pub mod server;
 pub mod store;
 pub mod tuner;

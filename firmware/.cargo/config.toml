@@ -1,8 +1,0 @@
-[build]
-target = "thumbv7em-none-eabihf"
-
-[target.thumbv7em-none-eabihf]
-# Flash + run with probe-rs (ST-Link / J-Link / DAPLink). Change the chip name
-# if you use a different H723 package (e.g. STM32H723ZG for the LQFP144).
-runner = "probe-rs run --chip STM32H723VG"
-rustflags = ["-C", "link-arg=-Tlink.x"]

@@ -1,0 +1,121 @@
+/* CrossoverAxis styling. The axis is a horizontal log-frequency ruler: tick
+ * labels at the bottom, band-region shading above them, and the draggable
+ * markers with their value labels on top. All speakers share the project's
+ * design tokens (tailwind.css); the CSS here only gives the axis its shape. */
+
+.crossover-axis {
+  position: relative;
+  min-height: 48px;
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.crossover-axis-track {
+  position: relative;
+  height: 64px;
+  width: 100%;
+}
+
+.crossover-tick-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.crossover-tick-label {
+  position: absolute;
+  left: 4px;
+  transform: translateX(-50%);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  color: var(--color-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.crossover-shading {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crossover-region {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 3px;
+}
+
+.crossover-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crossover-marker {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.crossover-marker-guide {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 2px;
+  height: 18px;
+  background: var(--color-line-hi);
+  border-radius: 1px;
+}
+
+.crossover-marker-knob {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  cursor: grab;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.crossover-marker-knob:active {
+  cursor: grabbing;
+}
+
+.crossover-marker-knob-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-line-hi);
+  background: var(--color-inset);
+}
+
+.crossover-marker-knob-face {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--color-amber);
+  box-shadow: 0 0 0 1px var(--color-amber-dim);
+}
+
+.crossover-marker-value {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  color: var(--color-muted);
+  text-align: right;
+  padding-left: 6px;
+  white-space: nowrap;
+}

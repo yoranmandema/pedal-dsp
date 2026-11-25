@@ -1,20 +1,93 @@
+# ============================================================================
+# pedal-dsp — root .gitignore
+# Organized by category: Rust / Node-UI / editor-OS / env-secrets / build
+# outputs / logs.
+# ============================================================================
+
+# --- Rust -------------------------------------------------------------------
+# Rust build outputs and caches (all target/ trees)
 target/
 **/*.rs.bk
-presets/*-local.json
-output.wav
-docs/.heartbeat
-plugin/build/
-plugin/build
-index/
-.DS_Store
-.vscode/
+
+# --- Node / UI (pnpm) ---------------------------------------------------------
+# Installed and built locally. Committing them made every card branch conflict
+# with every other. pnpm-lock.yaml is the UI lockfile and is NOT ignored here.
+node_modules/
+ui/node_modules/
+ui/dist/
 ui/standalone-tmp/
 ui/build-standalone.mjs
 
+# --- Editor / OS --------------------------------------------------------------
+# macOS
+.DS_Store
+*.DS_Store?
+._*
+.LSOverride
+.AppleDouble
+# Editor swap files
+*.swp
+*.swo
+.*.sw[po]
+.*~
+# IDE / editor files
+*.idea/
+*.iml
+*.suo
+*.user
+*.sdf
+*.ncb
+*.opensdf
+*.vcxproj
+*.vcproj.*
+*.natvis
+# Windows
+*.lnk
+*.toast
+
+# --- Env / secrets ------------------------------------------------------------
+# Local environment and secrets. None committed today; keep any new ones out.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# --- Build outputs / generated artifacts ---------------------------------------
+# Audio test / output files
+audio/*.wav
+# Generated documentation / UI mocks
+docs/ui-mock*
+# Generated Tauri 2 schema manifests
+shell/gen/schemas/
+# Binaries and built objects (superset of target/)
+*.exe
+*.dll
+*.dylib
+*.so
+*.bin
+*.o
+# WASM build output / source maps
+wasm/pkg/
+*.wasm
+*.js.map
+# Coverage output
+coverage/
+.coverage
+htmlcov/
+*.coverage
+
+# --- Logs --------------------------------------------------------------------
+*.log
+logs/
+
+# --- Regenerable / already-present rules (kept for completeness) ---------------
 # Kanban workers: one git worktree per card (see AGENTS.md "Worktrees")
 .worktrees/
-# Installed and built locally, never committed: committing them made every
-# card branch conflict with every other.
-ui/node_modules/
-ui/dist/
-Cargo.lock
+# App / root output artifacts
+presets/*-local.json
+output.wav
+docs/.heartbeat
+index/
+plugin/build/
+plugin/build

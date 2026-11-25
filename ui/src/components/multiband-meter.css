@@ -1,0 +1,65 @@
+/* Per-band gain-reduction meter (dB scale).
+ *
+ * A horizontal range bar: 0 dB at the top (no reduction, empty) down to
+ * -60 dB at the bottom (heavy reduction, full). The fill is a peak-hold
+ * marker, coloured amber for light reduction and graduating to red for
+ * heavy reduction. The value readout below carries the dB value, and the
+ * track itself is a `role="meter"` so assistive technology sees the live dB
+ * value and its min/max.
+ */
+
+/* The track: the scale background; never the value (the value is an
+ * absolutely-positioned fill over it, so `role="meter"` stays on this root). */
+.multiband-meter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.meter-scale {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 20px;
+  border-radius: 999px;
+  background: var(--color-line-soft);
+  overflow: hidden;
+  border: 1px solid var(--color-line-soft);
+}
+
+/* The fill: peak-hold bar. `height` is set inline from the smoothed dB value. */
+.meter-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(to bottom, var(--color-amber-hi), var(--color-amber) 55%, var(--color-danger) 100%);
+  transition: height 120ms linear;
+}
+
+/* The peak-hold marker: a small bar pinned to the bottom edge of the filled
+ * region, showing the deepest reduction reached since the last release. */
+.meter-peak {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-bg);
+  box-shadow: 0 0 0 2px var(--color-amber-dim);
+}
+
+.meter-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.5ch;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}

@@ -2,7 +2,7 @@
 
 The `pedal` Kanban board is the execution source of truth; this file records
 product direction and groups the active work. The current product path is
-**Mac-first Preact/Tauri UI → Raspberry Pi 5 deployment**. STM32 H7 is dropped.
+**Mac-first Preact/Tauri UI → Raspberry Pi 5 deployment**.
 The egui app remains a developer/debug surface. See `UI-ARCHITECTURE.md`,
 `IPC-PROTOCOL.md`, and `HANDOFF.md` for architecture and verified state.
 
@@ -46,7 +46,7 @@ After the Mac UI and engine behavior are stable, validate Linux/Pi audio I/O,
 round-trip latency and CPU, then package the fullscreen touchscreen app. Keep
 hardware-dependent measurement cards parked until the Pi and suitable audio
 interface are available. Do not represent those tests as passed based on Mac
-benchmarks. The Pi 5 is the settled hardware direction; STM32 H7/firmware work
+benchmarks. The Pi 5 is the settled hardware direction; firmware work
 is dormant and must not be reopened absent an explicit product-owner change.
 
 ## Parked / decision-gated areas

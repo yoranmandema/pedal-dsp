@@ -151,6 +151,14 @@ impl Graph {
         Ok(())
     }
 
+    /// Read back the *normalised* (0..1) value of a parameter as stored by
+    /// `set_param_real`.
+    pub fn param_norm(&self, node: &str, param: &str) -> Option<f32> {
+        let n = self.nodes.get(node)?;
+        let idx = n.spec.param_index(param)?;
+        Some(n.params[idx])
+    }
+
     pub fn node_ids(&self) -> Vec<NodeId> {
         self.nodes.keys().cloned().collect()
     }

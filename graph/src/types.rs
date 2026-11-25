@@ -19,6 +19,7 @@ pub enum Unit {
     Cents,
     Ratio,
     Linear,
+    Seconds,
     /// A discrete choice. The real value is the option index (`0..len`),
     /// `min = 0`, `max = len - 1`, curve `Linear`. Blocks round it.
     Choice(&'static [&'static str]),
@@ -34,6 +35,7 @@ impl fmt::Display for Unit {
             Unit::Semitones => "st",
             Unit::Cents => "cents",
             Unit::Ratio => "x",
+            Unit::Seconds => "s",
             Unit::Linear | Unit::Choice(_) => "",
         };
         write!(f, "{s}")

@@ -5,6 +5,9 @@
 //! macOS, Linux, and the Pi.
 
 pub mod blocks;
+pub mod overdrive;
+pub mod fuzz;
+pub mod waveshaper;
 pub mod doc;
 pub mod block;
 pub mod executor;

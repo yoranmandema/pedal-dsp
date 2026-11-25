@@ -1,5 +1,5 @@
 import { useEffect } from "preact/hooks";
-import { tuner, tunerOpen } from "../state";
+import { tuner, tunerOpen, presetsOpen, addBlockFor } from "../state";
 import {
   modalBackdrop,
   modalFoot,
@@ -17,10 +17,16 @@ export function TunerModal() {
   const t = tuner.value;
   const absCents = Math.abs(t.cents);
 
-  // Keyboard: T/t toggles, Escape closes. Ignored while a field is focused,
-  // and the effect only runs while the panel is open.
+  // Always mounted so the keyboard effect below persists across closes, but
+  // render nothing while closed -- without this the backdrop is permanently
+  // on screen.
+  if (!tunerOpen.value) return null;
+
+  // Keyboard: T/t toggles, Escape closes. The modal is always mounted, so the
+  // listener persists across closes and reopens; the handler only acts while
+  // the panel is open, and defers to the preset browser and add-block picker,
+  // which own their own Escape.
   useEffect(() => {
-    if (!tunerOpen.value) return;
     const onKey = (e: KeyboardEvent): void => {
       const active = document.activeElement;
       if (
@@ -31,6 +37,7 @@ export function TunerModal() {
       ) {
         return;
       }
+      if (presetsOpen.value || addBlockFor.value) return;
       if (e.key === "t" || e.key === "T") {
         tunerOpen.value = !tunerOpen.value;
       } else if (e.key === "Escape") {
@@ -41,15 +48,11 @@ export function TunerModal() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Recompute the note colour from the live reading on every event.
   const noteColour =
     absCents <= 5 ? "text-ok" : absCents <= 15 ? "text-amber" : "text-danger-text";
   const needleColour =
     absCents <= 5 ? "var(--color-ok)" : absCents <= 15 ? "var(--color-amber)" : "var(--color-danger-text)";
-
-  // Always mounted so the keyboard effect below persists across closes, but
-  // render nothing while closed -- without this the backdrop is permanently
-  // on screen.
-  if (!tunerOpen.value) return null;
 
   return (
     <div
@@ -76,12 +79,8 @@ export function TunerModal() {
         </header>
 
         <div class="flex-1 overflow-y-auto">
-          {/**
-            * The note readout is always in the DOM: while active it shows the
-            * note name and octave; when inactive it shows an em dash in
-            * `text-muted`. The verdict, gauge, frequency and signal are
-            * replaced by the idle body when the tuner is not active.
-            */}
+          {/** Note readout: always in the DOM. While active it shows the note
+              * name and octave; when inactive an em dash in text-muted. */}
           <div class="tuner-note">
             <span
               class={`text-64 leading-none font-bold tabular-nums ${t.active ? noteColour : "text-muted"}`}
@@ -158,8 +157,8 @@ export function TunerModal() {
             <div class="tuner-idle flex flex-col items-center py-6 text-center">
               <p class="text-xl text-muted">Play a note</p>
               <p class="text-sm text-muted">
-                The tuner listens to the instrument input, whatever the source is
-                set to.
+                The tuner listens to the instrument input, whatever the source
+                is set to.
               </p>
             </div>
           )}

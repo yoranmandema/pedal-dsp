@@ -11,8 +11,8 @@
 //! ```
 //!
 //! Memory cost is `2 * (8*COMB + 4*ALLPASS) * 4` bytes — 132 KB at 48 kHz.
-//! That is fine on an STM32H723 (564 KB SRAM) but would need a smaller
-//! topology on a Cortex-M0.
+//! That is fine for a desktop-class target, but would need a smaller
+//! topology on a constrained embedded device.
 
 use crate::util::clamp;
 

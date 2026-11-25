@@ -32,11 +32,27 @@ if [ -n "$_pedal_top" ]; then
   case "$(git -C "$_pedal_top" branch --show-current)" in
     wt/*)
       if [ -z "$(git -C "$_pedal_top" status --porcelain)" ] && ! git -C "$_pedal_top" merge-base --is-ancestor main HEAD; then
-        git -C "$_pedal_top" merge --no-edit -q main \
-          && echo "agent-env: merged the latest main into $(git -C "$_pedal_top" branch --show-current)" \
-          || echo "agent-env: merging main hit a conflict — resolve it and commit before anything else"
+        if git -C "$_pedal_top" merge --no-edit -q main; then
+          echo "agent-env: merged the latest main into $(git -C "$_pedal_top" branch --show-current)"
+        else
+          # Never leave a card worktree half-merged: workers used to keep
+          # committing on top of unresolved conflicts, and later lands died
+          # silently behind them. Leave the branch at its last clean commit.
+          git -C "$_pedal_top" merge --abort
+          echo "agent-env: merging main conflicts — this branch stays at its last clean commit, $(git -C "$_pedal_top" rev-list --count HEAD..main) commits behind main. Work normally; whoever lands the card must resolve the conflict (scripts/kanban-land.sh reruns the merge and stops with a clear message)."
+        fi
       fi ;;
-    main) echo "agent-env: WARNING — you are in the main checkout, not a card worktree. Kanban work belongs in .worktrees/<card id>." ;;
+    main)
+      # A WARNING was proven insufficient (2026-11-18: three parallel workers
+      # left uncommitted card work in the user's checkout overnight, stalling
+      # every land). If we know which card this session belongs to, move the
+      # session into its worktree instead of asking politely.
+      if [ -n "${HERMES_KANBAN_TASK:-}" ] && [ -d "$_pedal_top/.worktrees/$HERMES_KANBAN_TASK" ]; then
+        cd "$_pedal_top/.worktrees/$HERMES_KANBAN_TASK" \
+          && echo "agent-env: MOVED you out of the main checkout into .worktrees/$HERMES_KANBAN_TASK — all card work belongs in worktrees; do everything from here."
+      else
+        echo "agent-env: WARNING — you are in the main checkout, not a card worktree. Kanban work belongs in .worktrees/<card id>. Do not edit, build, or test here; cd into your card worktree."
+      fi ;;
   esac
 fi
 unset _pedal_top

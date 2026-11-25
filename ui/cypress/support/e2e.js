@@ -38,14 +38,31 @@ Cypress.Commands.add("selectBlock", (channelIndex, blockIndex) => {
  * code treats an absent `pointerType` as a mouse — so a touch test has to say
  * `pointerType: "touch"` or the long press never starts.
  */
-Cypress.Commands.add("pointer", { prevSubject: "element" }, (el, type, opts = {}) => {
-  const win = el.ownerDocument.defaultView;
+Cypress.Commands.add("pointer", { prevSubject: "element" }, (el, type, x, y) => {
+  const doc = el?.ownerDocument ?? (el?.[0]?.ownerDocument ?? window.document);
+  const win = doc.defaultView ?? window;
   const e = new win.PointerEvent(type, {
     bubbles: true,
     cancelable: true,
     pointerId: 1,
     pointerType: "mouse",
-    ...opts,
+    clientX: x,
+    clientY: y,
   });
-  el.dispatchEvent(e);
+  (el?.[0] ?? el).dispatchEvent(e);
+});
+
+Cypress.Commands.add("key", { prevSubject: "element" }, (el, type, key) => {
+  // `el` may be a plain DOM node or a jQuery/Cypress wrapper; unwrap it.
+  const doc = el?.ownerDocument ?? (el[0]?.ownerDocument ?? window.document);
+  const win = doc.defaultView ?? window;
+  const e = new win.KeyboardEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    key,
+    code: key,
+    keyCode: key === "Enter" ? 13 : 0,
+    which: key === "Enter" ? 13 : 0,
+  });
+  (el?.[0] ?? el).dispatchEvent(e);
 });

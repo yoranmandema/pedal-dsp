@@ -7,7 +7,7 @@
 //! The transform is a plain decimation-in-time Cooley-Tukey with a bit-reversal
 //! permutation.  It is not the fastest possible FFT, but at the sizes a pedal
 //! can afford (N = 512..2048, a few hundred transforms a second) it is a few
-//! percent of a Cortex-M7 and far simpler to audit than a split-radix one.
+//! percent of a modern desktop CPU and far simpler to audit than a split-radix one.
 //!
 //! Note on sizing: this crate targets a toolchain without
 //! `generic_const_exprs`, so array lengths must use the bare const parameter.
