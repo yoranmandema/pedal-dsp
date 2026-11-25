@@ -20,6 +20,9 @@ import {
   type Tuner,
 } from "./protocol";
 
+// Re-export types used by components from state.ts
+export { type DownloadItem } from "./protocol";
+
 export const bridge: Bridge = createBridge();
 
 export const state = signal<State | null>(null);
