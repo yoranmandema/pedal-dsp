@@ -39,6 +39,7 @@ export const selected = signal<{ channel: string; block: string } | null>(null);
 export const selectedRouting = signal<string | null>(null);
 /** Whether the preset browser modal is open. */
 export const presetsOpen = signal(false);
+export const footswitchOpen = signal(false);
 /** Channel the add-block picker targets; null when the picker is closed. */
 export const addBlockFor = signal<string | null>(null);
 /** Current filter text of the add-block picker. */
@@ -286,6 +287,58 @@ export const setSource = (source: "riff" | "live" | "silence") =>
 export const listPresets = () => mutate("listPresets");
 
 export const loadPreset = (name: string) => mutate("loadPreset", { name });
+
+/** Step to the neighbouring preset (no-op at either end). Reuses `loadPreset`. */
+export const nextPreset = () => stepPreset(1);
+export const prevPreset = () => stepPreset(-1);
+function stepPreset(d: number) {
+  const s = state.value;
+  if (!s) return;
+  const next = s.presets.indexOf(s.preset) + d;
+  if (next >= 0 && next < s.presets.length) void loadPreset(s.presets[next]);
+}
+
+// --- Footswitches and expression pedal (US-6.3) ---------------------------
+export type FsAction = "preset-up" | "preset-down" | null;
+/** Debounced switch / pedal state. Hardware (later) and the Test panel both write it. */
+export const footswitch = signal({ up: false, down: false, expression: 0 });
+/** What each switch does; `null` = unassigned. */
+export const footswitchAction = signal<{ up: FsAction; down: FsAction }>({ up: null, down: null });
+/** The block param the expression pedal drives: "channel|block|param". */
+export const expressionTarget = signal<string>("");
+
+const runAction = (a: FsAction) => {
+  if (a === "preset-up") nextPreset();
+  else if (a === "preset-down") prevPreset();
+};
+
+/** A switch press (edge). Updates the read-out and runs its bound action. */
+export function pressFootswitch(which: "up" | "down") {
+  footswitch.value = { ...footswitch.value, [which]: true };
+  runAction(footswitchAction.value[which]);
+}
+export function releaseFootswitch(which: "up" | "down") {
+  footswitch.value = { ...footswitch.value, [which]: false };
+}
+
+/** Find the bound param's spec in the current rig, or null. */
+export function resolveExpressionTarget(): { channel: string; block: string; param: string; min: number; max: number } | null {
+  const s = state.value;
+  const [channel, block, param] = expressionTarget.value.split("|");
+  if (!s || !param) return null;
+  const ch = s.channels.find((c) => c.id === channel);
+  const b = ch?.blocks.find((x) => x.id === block);
+  const spec = b && s.registry[b.type]?.params.find((p) => p.id === param);
+  return spec && spec.kind === "number" ? { channel, block, param, min: spec.min, max: spec.max } : null;
+}
+
+/** Expression 0..1 (heel..toe) -> the bound param, linearly across its range. */
+export function setExpression(v: number) {
+  const e = Math.min(1, Math.max(0, v));
+  footswitch.value = { ...footswitch.value, expression: e };
+  const t = resolveExpressionTarget();
+  if (t) void setParam(t.channel, t.block, t.param, t.min + (t.max - t.min) * e);
+}
 
 export const savePreset = (name: string) => mutate("savePreset", { name });
 
