@@ -32,3 +32,19 @@ jobs:
         run: cd ui && pnpm install --frozen-lockfile
       - name: Build
         run: cd ui && pnpm run build
+
+  auto-merge:
+    name: Auto-merge when CI passes
+    needs: [rust, ui]
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Squash merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
