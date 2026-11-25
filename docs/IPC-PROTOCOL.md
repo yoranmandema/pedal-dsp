@@ -195,6 +195,7 @@ be changed from the client.
 | `setSource` | `{source}` | riff / live / silence | full state |
 | `listPresets` | — | — | `{"presets": [...]}` |
 | `loadPreset` | `{name}` | load a preset | full state |
+| `nextPreset` / `prevPreset` | – | step to the neighbouring preset in the sorted list (no-op at either end) | full state |
 | `savePreset` | `{name}` | save the current rig | full state |
 | `deletePreset` | `{name}` | delete a preset | full state |
 | `renamePreset` | `{from, to}` | rename a preset | full state |
