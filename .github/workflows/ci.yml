@@ -21,6 +21,8 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --exclude pedal-shell --exclude pedal-engine
       - name: Run lifecycle tests
+        env:
+          CARGO_TARGET_DIR: ../target
         run: cargo test -p pedal-engine --test lifecycle
 
   ui:
