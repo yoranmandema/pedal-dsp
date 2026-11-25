@@ -16,8 +16,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Install Rust
         run: rustup install stable
+      - name: Build engine binary
+        run: cargo build -p pedal-engine --bin pedal-engine
       - name: Run tests
-        run: cargo test --workspace --exclude pedal-shell
+        run: cargo test --workspace --exclude pedal-shell --exclude pedal-engine
+      - name: Run lifecycle tests
+        run: cargo test -p pedal-engine --test lifecycle
 
   ui:
     name: UI build
