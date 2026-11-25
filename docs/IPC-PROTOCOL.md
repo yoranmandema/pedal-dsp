@@ -199,6 +199,20 @@ be changed from the client.
 | `savePreset` | `{name}` | save the current rig | full state |
 | `deletePreset` | `{name}` | delete a preset | full state |
 | `renamePreset` | `{from, to}` | rename a preset | full state |
+| `listModels` | `{query, kinds[], manufacturers[], cabIr[], formats[], states[], sort, page, pageSize}` | browse the cached index | `{total, page, page_size, models[], facets}` |
+| `getModel` | `{id}` | one index record | the record |
+| `downloadModel` | `{id, url?}` | queue a download (`url` overrides the record's `download_url`; http/https only) | `{id, outcome, local_path, local}`; `outcome` is `queued`, `already_downloaded` or `already_active` |
+| `cancelDownload` | `{id}` | cancel a queued/running download, delete its `.part` | `{cancelled}` |
+| `listDownloads` | — | the download queue | `{downloads: [DownloadItem]}` |
+
+### Download events
+
+`{"type":"event","event":"download","payload":DownloadItem}` is sent on every
+change (queued, running, throttled progress, retry, done, failed, cancelled):
+`{id, status: queued|running|done|failed|cancelled, received, total, percent (0-100), local_path (relative to $PEDAL_MODELS), error, retries}`.
+Downloads resume with HTTP `Range` after a dropped connection (up to 5 retries);
+a failure after that keeps the `.part` so the next `downloadModel` resumes it.
+On `done` the index record's `local_path`/`local` are set and `models.json` is rewritten.
 
 Errors return `{ "ok": false, "error": "..." }`. A failed mutation never
 changes state, so the client can keep its current snapshot.

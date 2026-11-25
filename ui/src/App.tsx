@@ -8,7 +8,11 @@ import { PresetBrowser } from "./components/PresetBrowser";
 import { ModelBrowser } from "./components/ModelBrowser";
 import { AddBlockModal } from "./components/AddBlockModal";
 import { TunerModal } from "./components/TunerModal";
+<<<<<<< HEAD
+import { DownloadsPanel } from "./components/DownloadsPanel";
+=======
 import { FootswitchPanel } from "./components/FootswitchPanel";
+>>>>>>> origin/develop
 import { SelectionRing } from "./selection";
 
 export function App() {
@@ -54,6 +58,7 @@ export function App() {
       <FootswitchPanel />
       <ModelBrowser />
       <AddBlockModal />
+      <DownloadsPanel />
       {/* Drawn above the chain but outside every scrolling container, so the
           ring is never clipped by the strip or the panel. */}
       <SelectionRing />

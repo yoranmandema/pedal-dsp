@@ -22,6 +22,23 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
+<<<<<<< HEAD
+# HTTP downloads for model files: range requests (resume), progress, sha256.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls-no-provider",
+    "http2",
+    "charset",
+    "system-proxy",
+    "query",
+    "stream",
+] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Convert a reqwest byte stream into an `AsyncRead` for the resumable writer.
+tokio-util = { version = "0.7", features = ["io"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "1"
+=======
 pedal-health = { path = "../health" }
 # Model browsing: the local index, listModels/getModel/refreshIndex/
 # downloadModel/cancelDownload over IPC.
@@ -30,3 +47,4 @@ pedal-tone3000 = { path = "../tone3000" }
 sha2 = "0.10"
 # HTTP client for downloading model binaries (downloadModel).
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls"] }
+>>>>>>> origin/develop

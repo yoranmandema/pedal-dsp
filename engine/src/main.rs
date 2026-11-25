@@ -19,7 +19,26 @@ use pedal_engine::store::Store;
 
 #[tokio::main]
 async fn main() {
+<<<<<<< HEAD
+    let args: Vec<String> = std::env::args().collect();
+    let flag = |name: &str| args.iter().any(|a| a == name);
+    let value = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let headless_mode = flag("--headless");
+    let port = value("--port")
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(PORT);
+    let bench = value("--bench")
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|s| *s > 0.0);
+    let preset = value("--rig").unwrap_or_else(|| "04-rainbow".into());
+=======
     let args = EngineArgs::parse();
+>>>>>>> origin/develop
 
     // One-shot: rewrite path-based `model` references to index ids, for models
     // the cached index already has. Nothing is written for a model the index
@@ -51,6 +70,133 @@ async fn main() {
         return;
     }
 
+<<<<<<< HEAD
+    let store = Store::discover();
+    if let Some(e) = &store.error {
+        eprintln!("presets: {e}");
+    }
+
+    // Pick the devices first: the executor and the audio thread must agree on
+    // the sample rate. `--headless` skips this entirely — there is no device.
+    let devices = if headless_mode {
+        None
+    } else {
+        Some(host::pick())
+    };
+    let setup = match &devices {
+        Some(d) => Setup {
+            sample_rate: d.rate as f32,
+            out_channels: d.out_channels,
+            block: BLOCK,
+            channel_mode: pedal_engine::audio::ChannelMode::First(2),
+            latency_frames: LATENCY_FRAMES,
+        },
+        None => Setup {
+            sample_rate: 48_000.0,
+            out_channels: 2,
+            block: BLOCK,
+            channel_mode: pedal_engine::audio::ChannelMode::First(2),
+            latency_frames: LATENCY_FRAMES,
+        },
+    };
+    let source = Arc::new(AtomicU8::new(2)); // silence by default; the riff is opt-in
+    let (mut handle, cmd_rx, trash_tx, running) = new_engine(setup, source.clone());
+    handle.preset_dir = store.dir.clone();
+    let meters = handle.meters.clone();
+    let registry = handle.registry.clone();
+
+    // Compile and install the initial rig before the streams start.
+    let doc = store
+        .presets
+        .iter()
+        .find(|(n, _)| *n == preset)
+        .map(|(_, d)| d.clone())
+        .or_else(|| store.presets.first().map(|(_, d)| d.clone()))
+        .unwrap_or_else(|| Rig::new("Untitled").to_doc());
+    let rig = Rig::from_doc(&doc);
+    {
+        let resolver = pedal_engine::model_index::resolver();
+        let mut g = rig
+            .to_doc()
+            .build_in_with(&handle.registry, &handle.preset_dir, &resolver)
+            .expect("initial rig builds");
+        rig.apply_routings(&mut g, &handle.registry)
+            .expect("initial rig routings apply");
+        let ex = dsp_graph::Executor::compile_owned(&mut g, setup.sample_rate, BLOCK)
+            .expect("initial rig compiles");
+        *handle.node_ids.lock().unwrap() = ex.node_ids().to_vec();
+        handle
+            .push(Cmd::Swap(ex, Vec::new()))
+            .expect("initial swap");
+    }
+    handle.set_source(2); // silence
+
+    // The streams own the command queue from here on. `_headless` stays alive
+    // until the process exits; dropping it stops the simulated device.
+    let mut _headless: Option<headless::Headless> = None;
+    let mut headless_stats = None;
+    let tuner_ring = match devices {
+        Some(d) => {
+            let (_ring, tuner_ring) = host::start(
+                &d,
+                cmd_rx,
+                trash_tx,
+                running,
+                meters.clone(),
+                source.clone(),
+            );
+            // The audio ring handle is dropped here; the input and output
+            // streams are `std::mem::forget`t, so they keep running until the
+            // process exits.
+            tuner_ring
+        }
+        None => {
+            // The riff by default: with no interface there is no live input, and
+            // a silent DSP proves nothing about CPU cost.
+            let src = match value("--source").as_deref() {
+                Some("live") => 1,
+                Some("silence") => 2,
+                _ => 0,
+            };
+            handle.set_source(src);
+            let name = match src {
+                1 => "live",
+                2 => "silence",
+                _ => "riff",
+            };
+            // The headless thread reads this source. Pass handle.source so the
+            // "live" tone actually reaches the tuner ring: new_engine's
+            // handle.source was constructed from source.clone() at engine
+            // start, so set_source writes to a different AtomicU8 than the one
+            // passed to the headless thread. Without this, the tuner ring
+            // stays empty and no tuner event reaches the UI.
+            let h = headless::start(
+                setup,
+                cmd_rx,
+                trash_tx,
+                running,
+                meters.clone(),
+                handle.source.clone(),
+            );
+            headless_stats = Some(h.stats.clone());
+            eprintln!("pedal-engine: headless (no audio device), source {name}");
+            let tuner_ring = h.tuner_ring.clone();
+            _headless = Some(h);
+            tuner_ring
+        }
+    };
+
+    pedal_engine::tuner::spawn(tuner_ring, setup.sample_rate, meters.clone());
+
+    // --- IPC ---------------------------------------------------------------
+    let sh = Arc::new(Shared::new(handle, registry, source, store));
+    {
+        let mut r = sh.rig.lock().unwrap();
+        *r = rig;
+        drop(r);
+        let mut p = sh.preset.lock().unwrap();
+        *p = preset.clone();
+=======
     // Build the engine. A failure to write the pidfile is fatal here. The IPC
     // listener bind failure surfaces from `run`, so normal quits are graceful.
     let mut engine = match Engine::new(&args).await {
@@ -64,6 +210,7 @@ async fn main() {
         if let Some(e) = guard.error.as_ref() {
             eprintln!("pedal-engine: store error: {e}");
         }
+>>>>>>> origin/develop
     }
 
     // Health monitor (~1 Hz): SoC temperature, decoded `vcgencmd get_throttled`

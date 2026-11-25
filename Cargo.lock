@@ -2890,16 +2890,26 @@ dependencies = [
  "cpal",
  "dsp-graph",
  "futures-util",
+ "hex",
  "pedal-dsp",
+<<<<<<< HEAD
+=======
  "pedal-health",
  "pedal-tone3000",
+>>>>>>> origin/develop
  "reqwest",
  "rtrb",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
+<<<<<<< HEAD
+ "thiserror 1.0.69",
+=======
+>>>>>>> origin/develop
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
 ]
 
 [[package]]
