@@ -7,10 +7,12 @@ import { type BlockPayload } from "./dnd";
 import { type Config } from "./protocol";
 import {
   asState,
+  isDownload,
   isLooper,
   isMeters,
   isState,
   isTuner,
+  type DownloadItem,
   type Meters,
   type Routing,
   type RoutingEndpoint,
@@ -55,6 +57,19 @@ export const tuner = signal<Tuner>({
   clarity: 0,
   reference: 440,
 });
+/** The download queue, newest state per model id (from `event: download`). */
+export const downloads = signal<DownloadItem[]>([]);
+
+function upsertDownload(item: DownloadItem): void {
+  const cur = downloads.value;
+  const i = cur.findIndex((d) => d.id === item.id);
+  downloads.value = i < 0 ? [...cur, item] : cur.map((d, j) => (j === i ? item : d));
+}
+
+export function dismissDownload(id: string): void {
+  downloads.value = downloads.value.filter((d) => d.id !== id);
+}
+
 /** Whether the tuner modal is open. */
 export const tunerOpen = signal(false);
 /**
@@ -117,6 +132,7 @@ export async function init(): Promise<void> {
     else if (isMeters(msg)) meters.value = msg.payload;
     else if (isTuner(msg)) tuner.value = msg.payload;
     else if (isLooper(msg)) looperFrac.value = msg.payload.frac;
+    else if (isDownload(msg)) upsertDownload(msg.payload);
   });
   try {
     fold(asState(await bridge.request("getState")));
