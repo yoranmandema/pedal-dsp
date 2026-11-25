@@ -1,4 +1,4 @@
-import { meters, presetsOpen, state, loadPreset, openModels, setSource, setInputGain, setMasterOutVolume, tunerOpen, bufferSizeOptions, setConfig } from "../state";
+import { meters, presetsOpen, state, loadPreset, openModels, setSource, setInputGain, setMasterOutVolume, tunerOpen, bufferSizeOptions, setConfig, footswitch, footswitchOpen } from "../state";
 import { HeaderKnob } from "./HeaderKnob";
 import { TunerIcon } from "./Icon";
 
@@ -93,6 +93,14 @@ export function TopBar() {
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1" y="1" width="14" height="14" rx="3" stroke="currentColor" fill="none"/><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor"/><line x1="6" y1="3" x2="6" y2="8" stroke="currentColor"/><line x1="11" y1="3" x2="11" y2="8" stroke="currentColor"/></svg>
           <span>Models</span>
+        </button>
+        <button
+          class="fs-pill min-h-[var(--ui-touch)] w-[64px] px-2 flex items-center justify-center rounded-md border border-line bg-[#1a1b21] text-[10px] font-semibold tracking-[0.6px] text-amber tabular-nums hover:border-line-hi"
+          onClick={() => (footswitchOpen.value = true)}
+          title="Footswitches and expression pedal"
+          aria-label="Open the footswitch panel"
+        >
+          FS: {footswitch.value.up ? "U" : footswitch.value.down ? "D" : footswitch.value.expression >= 0.95 ? "E" : "—"}
         </button>
         <div class="source-toggle flex border border-line rounded-md overflow-hidden">
           {(["riff", "live", "silence"] as const).map((src) => (
