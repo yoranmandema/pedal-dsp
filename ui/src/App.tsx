@@ -9,6 +9,7 @@ import { ModelBrowser } from "./components/ModelBrowser";
 import { AddBlockModal } from "./components/AddBlockModal";
 import { TunerModal } from "./components/TunerModal";
 import { DownloadsPanel } from "./components/DownloadsPanel";
+import { FootswitchPanel } from "./components/FootswitchPanel";
 import { SelectionRing } from "./selection";
 
 export function App() {
@@ -51,6 +52,7 @@ export function App() {
       <Editor />
       <TunerModal />
       <PresetBrowser />
+      <FootswitchPanel />
       <ModelBrowser />
       <DownloadsPanel />
       <AddBlockModal />
