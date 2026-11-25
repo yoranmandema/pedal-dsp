@@ -148,8 +148,9 @@ export function Editor() {
 
   if (!sel) {
     return (
-      <footer class="editor row-start-3 col-start-1 grid grid-cols-[minmax(0,var(--ui-id-w))_minmax(0,1fr)] items-center gap-3 border-t border-line bg-linear-to-b from-[#1a1b21] to-[#14151a] p-4 max-h-[62vh] portrait:max-h-[32vh] overflow-y-auto overscroll-contain desk:h-[var(--ui-bar)] desk:min-h-[var(--ui-bar)] desk:max-h-none desk:overflow-visible phone:grid-cols-1 phone:items-start">
+      <footer class="editor relative row-start-3 col-start-1 grid grid-cols-[minmax(0,var(--ui-id-w))_minmax(0,1fr)] items-center gap-3 border-t border-line bg-linear-to-b from-[#1a1b21] to-[#14151a] p-4 max-h-[62vh] portrait:max-h-[32vh] overflow-y-auto overscroll-contain desk:h-[var(--ui-bar)] desk:min-h-[var(--ui-bar)] desk:max-h-none desk:overflow-visible phone:grid-cols-1 phone:items-start">
         <div class={`${emptyNote} editor-empty emptyNote`}>Select a block in the chain to edit it.</div>
+        <AddBlockPicker />
       </footer>
     );
   }
@@ -158,8 +159,9 @@ export function Editor() {
   const block = channel?.blocks.find((b) => b.id === sel.block);
   if (!block) {
     return (
-      <footer class="editor row-start-3 col-start-1 grid grid-cols-[minmax(0,var(--ui-id-w))_minmax(0,1fr)] items-center gap-3 border-t border-line bg-linear-to-b from-[#1a1b21] to-[#14151a] p-4 max-h-[62vh] portrait:max-h-[32vh] overflow-y-auto overscroll-contain desk:h-[var(--ui-bar)] desk:min-h-[var(--ui-bar)] desk:max-h-none desk:overflow-visible phone:grid-cols-1 phone:items-start">
+      <footer class="editor relative row-start-3 col-start-1 grid grid-cols-[minmax(0,var(--ui-id-w))_minmax(0,1fr)] items-center gap-3 border-t border-line bg-linear-to-b from-[#1a1b21] to-[#14151a] p-4 max-h-[62vh] portrait:max-h-[32vh] overflow-y-auto overscroll-contain desk:h-[var(--ui-bar)] desk:min-h-[var(--ui-bar)] desk:max-h-none desk:overflow-visible phone:grid-cols-1 phone:items-start">
         <div class={`${emptyNote} editor-empty emptyNote`}>That block is gone.</div>
+        <AddBlockPicker />
       </footer>
     );
   }

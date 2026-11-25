@@ -1,3 +1,4 @@
+import { useState } from "preact/hooks";
 import { meters, presetsOpen, state, loadPreset, openModels, setSource, setInputGain, setMasterOutVolume, tunerOpen, bufferSizeOptions, setConfig, footswitch, footswitchOpen } from "../state";
 import { HeaderKnob } from "./HeaderKnob";
 import { TunerIcon } from "./Icon";
@@ -23,6 +24,7 @@ function Meter({ label, value }: { label: string; value: number }) {
 
 export function TopBar() {
   const s = state.value;
+  const [dspOpen, setDspOpen] = useState(false);
   if (!s) return null;
   const idx = s.presets.indexOf(s.preset);
 
@@ -32,7 +34,7 @@ export function TopBar() {
   };
 
   return (
-    <header class="topbar portrait:flex-nowrap! portrait:overflow-x-auto portrait:overflow-y-hidden portrait:[scrollbar-width:none] portrait:*:flex-none flex min-h-[var(--ui-topbar-h)] items-center gap-4.5 px-4 min-w-0 bg-linear-to-b from-[#1e2027] to-[#16171c] border-b border-line compact:flex-wrap desk:flex-wrap compact:gap-y-2 compact:px-3 compact:py-2">
+    <header class="topbar flex min-h-[var(--ui-topbar-h)] items-center gap-4.5 px-4 min-w-0 bg-linear-to-b from-[#1e2027] to-[#16171c] border-b border-line compact:flex-wrap desk:flex-wrap compact:gap-y-2 compact:px-3 compact:py-2">
       {/* The input trim knob: first child of the top bar, top left. */}
       <HeaderKnob
         label="Input"
@@ -43,15 +45,15 @@ export function TopBar() {
         onChange={(v) => void setInputGain(v)}
       />
 
-      <div class="preset flex items-center gap-2 min-w-[230px] compact:flex-1 compact:min-w-0">
-        <button class="nav size-[var(--ui-touch)] rounded-key border border-line bg-raised-2 leading-none text-muted hover:border-line-hi hover:text-text" onClick={() => step(-1)} title="Previous preset">
+      <div class="preset flex items-center gap-2 min-w-[230px] compact:flex-1 compact:min-w-[200px]">
+        <button class="nav flex-none size-[var(--ui-touch)] rounded-key border border-line bg-raised-2 leading-none text-muted hover:border-line-hi hover:text-text" onClick={() => step(-1)} title="Previous preset">
           ‹
         </button>
-        <div class="preset-name flex flex-col min-w-0">
+        <div class="preset-name flex flex-col min-w-[72px] flex-1">
           <span class="text-lg font-semibold truncate">{s.preset || "Untitled"}</span>
           <small class="text-[10px] font-normal text-muted capitalize">{s.source}</small>
         </div>
-        <button class="nav size-[var(--ui-touch)] rounded-key border border-line bg-raised-2 leading-none text-muted hover:border-line-hi hover:text-text" onClick={() => step(1)} title="Next preset">
+        <button class="nav flex-none size-[var(--ui-touch)] rounded-key border border-line bg-raised-2 leading-none text-muted hover:border-line-hi hover:text-text" onClick={() => step(1)} title="Next preset">
           ›
         </button>
         <button class="nav presets-open size-[var(--ui-touch)] rounded-key border border-line bg-raised-2 leading-none text-muted hover:border-line-hi hover:text-text" onClick={() => (presetsOpen.value = true)} title="Browse, save, rename, and delete presets">
@@ -59,7 +61,7 @@ export function TopBar() {
         </button>
       </div>
 
-      <div class="slots flex gap-1">
+      <div class="slots flex gap-1 compact:hidden">
         {SLOTS.map((s2, i) => (
           <div
             key={s2}
@@ -74,7 +76,7 @@ export function TopBar() {
         ))}
       </div>
 
-      <div class="top-right flex items-center gap-3.5 ml-auto compact:flex-wrap portrait:flex-nowrap! portrait:ml-0 compact:gap-y-2">
+      <div class="top-right flex items-center gap-3.5 ml-auto compact:flex-wrap compact:gap-y-2 compact:gap-x-2">
         <button
           class={`min-h-[var(--ui-touch)] px-2.5 flex items-center gap-1.5 rounded-md border text-[11px] font-semibold tracking-[0.6px] uppercase ${tunerOpen.value ? "on bg-[#2f323b] text-text border-line inset-shadow-[0_-2px_0_var(--color-amber)]" : "bg-[#1a1b21] text-muted border-line hover:text-text hover:border-line-hi"}`}
           onClick={() => (tunerOpen.value = true)}
@@ -113,6 +115,8 @@ export function TopBar() {
             </button>
           ))}
         </div>
+        {/* Desktop: meters, DSP load, latency and buffer sit inline. */}
+        <div class="dsp-inline contents compact:hidden">
         <Meter label="IN" value={meters.value.in} />
         <Meter label="OUT" value={meters.value.out} />
         <div class="cpu grid place-items-center gap-1" title="DSP load">
@@ -143,6 +147,55 @@ export function TopBar() {
             {bufferSizeOptions.value.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </label>
+        </div>
+        {/* Touch / narrow: one "DSP" button opens the same readouts in a popover. */}
+        <div class="dsp-pop relative hidden compact:block">
+          <button
+            class={`dsp-btn relative z-50 min-h-[var(--ui-touch)] min-w-[var(--ui-touch)] px-2.5 flex items-center gap-1.5 rounded-md border text-[11px] font-semibold tracking-[0.6px] uppercase tabular-nums ${dspOpen ? "on bg-[#2f323b] text-text border-line inset-shadow-[0_-2px_0_var(--color-amber)]" : "bg-[#1a1b21] text-muted border-line"}`}
+            onClick={() => setDspOpen(!dspOpen)}
+            aria-expanded={dspOpen}
+            aria-label="DSP load, meters and buffer"
+          >
+            DSP {meters.value.cpu.toFixed(0)}%
+          </button>
+          {dspOpen && (
+            <>
+              <div class="fixed inset-0 z-40" onClick={() => setDspOpen(false)} aria-hidden="true" />
+              <div class="dsp-popover absolute right-0 top-full mt-2 z-50 flex flex-col gap-3 p-3 rounded-card border border-line bg-[#1a1b21] shadow-modal">
+        <Meter label="IN" value={meters.value.in} />
+        <Meter label="OUT" value={meters.value.out} />
+        <div class="cpu grid place-items-center gap-1" title="DSP load">
+          <span class="cpu-value text-[11px] tabular-nums text-text">{meters.value.cpu.toFixed(0)}%</span>
+          <span class="cpu-label text-[9px] tracking-[0.6px] text-muted">DSP</span>
+        </div>
+        {/* Latency readout: one-way IN/OUT and round-trip TOTAL, in ms. */}
+        <div class="latency flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-mono tabular-nums bg-[#1a1b21] border border-line rounded-md px-2 py-1.5">
+          <span class="text-muted">IN</span>
+          <span class="text-amber">{Number.isFinite(s.oneWayLatencyMs) ? s.oneWayLatencyMs.toFixed(2) : "—"}</span>
+          <span class="text-muted">OUT</span>
+          <span class="text-amber">{Number.isFinite(s.roundTripLatencyMs) ? s.roundTripLatencyMs.toFixed(2) : "—"}</span>
+          <span class="text-muted">TOT</span>
+          <span class="text-amber">{Number.isFinite(s.roundTripLatencyMs) ? s.roundTripLatencyMs.toFixed(2) : "—"}</span>
+          <span class="text-muted">ms</span>
+        </div>
+        {/* Buffer-size control: a dropdown populated from the engine's supported
+            options (128/256/512 by default). Changing it re-routes the audio
+            streams; the engine replies with a fresh snapshot. */}
+        <label class="buffer-select grid items-center justify-items-center gap-1">
+          <span class="ctrlName">BUFFER</span>
+          <select
+            class="textField min-h-[var(--ui-touch)] min-w-[var(--ui-touch)] px-3"
+            value={s.bufferFrames}
+            onChange={(e) => void setConfig(Number((e.target as HTMLSelectElement).value))}
+            title="Change I/O buffer size"
+          >
+            {bufferSizeOptions.value.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+              </div>
+            </>
+          )}
+        </div>
         {/* The master output knob: last child of the top-right area, top right. */}
         <HeaderKnob
           label="Master"

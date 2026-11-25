@@ -81,7 +81,13 @@ export function useTouchDrag({ onStart, onMove, onEnd }: TouchDragCallbacks): To
       if (press.current) return;
       const el = e.currentTarget as HTMLElement;
       press.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, timer: null, dragged: false };
-      el.setPointerCapture?.(e.pointerId);
+      // A synthetic or already-released pointer throws; the gesture still works
+      // through the window-level move/up listeners.
+      try {
+        el.setPointerCapture?.(e.pointerId);
+      } catch {
+        /* no active pointer to capture */
+      }
       // A mouse press becomes a drag on movement alone; the timer is for a
       // real touch or pen contact. An absent `pointerType` (a synthetic event)
       // is treated as a mouse, so a drag threshold applies.
@@ -160,7 +166,11 @@ export function useRackLongPress(): TouchDragHandlers {
       if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       const row = e.currentTarget as HTMLElement;
       origin.current = { x: e.clientX, y: e.clientY };
-      row.setPointerCapture?.(e.pointerId);
+      try {
+        row.setPointerCapture?.(e.pointerId);
+      } catch {
+        /* no active pointer to capture */
+      }
       if (timer.current != null) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
