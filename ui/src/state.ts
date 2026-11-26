@@ -145,7 +145,11 @@ export async function init(): Promise<void> {
           progress: 100,
         };
       } else if (ev.event === "gain_staging_profiles") {
-        // Profiles arrived but don't overwrite the live snapshot fields.
+        // Don't overwrite live snapshot fields; just store the names list.
+        const prev = gainStaging.value;
+        if (prev) {
+          gainStaging.value = { ...prev, profileNames: ev.payload.profiles };
+        }
       }
     }
   });

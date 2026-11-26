@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "preact/hooks";
-import { state, closeGainStaging, bridge } from "../state";
+import { state, closeGainStaging, bridge, setInputGain } from "../state";
+import type { GainStagingLevelEvent } from "../protocol";
 import "./gain-staging.css";
 
 // Instrument type definitions from the design spec
@@ -34,7 +35,9 @@ export function GainStagingModal() {
   return (
     <div class="gs-modal-backdrop" onClick={(e) => {
       if (e.target === e.currentTarget) closeGainStaging();
-    }}>
+    }} onKeyDown={(e) => {
+      if (e.key === "Escape") closeGainStaging();
+    }} tabIndex={0} role="dialog" aria-modal="true">
       <div class="gs-modal-card">
         <div class="gs-modal-header">
           <span class="gs-modal-title">Gain Staging</span>
@@ -61,16 +64,9 @@ function GainStagingStep1() {
   const [recommendedGain, setRecommendedGain] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const sendGs = (msg: Record<string, unknown>) => {
-    const w = bridge.socket;
-    if (w && w.readyState === WebSocket.OPEN) {
-      try { w.send(JSON.stringify(msg)); } catch { /* ignore */ }
-    }
-  };
-
   // Load profiles and listen for gain staging events on mount
   useEffect(() => {
-    sendGs({ type: "req", id: 1, cmd: "gain_staging", args: { action: "list_profiles" } });
+    sendGainStaging({ action: "list_profiles" });
     const onMessage = (e: MessageEvent) => {
       try {
         const msg = JSON.parse(String(e.data));
@@ -84,8 +80,14 @@ function GainStagingStep1() {
             setMeasuredPeak(msg.payload.recommended_output ?? null);
             setRecommendedGain(msg.payload.recommended_input ?? null);
             setMeasurePhase("done");
+            setStep(3);
           } else if (msg.event === "gain_staging_profiles") {
-            // We don't get profile names from the engine events yet.
+            // Profile names arrived — update the modal's local list.
+            const ev = msg as GainStagingLevelEvent;
+            if (ev.event === "gain_staging_profiles") {
+              const names = ev.payload.profiles ?? [];
+              setProfiles(names.map((name) => ({ name }) as GainStagingProfile));
+            }
           }
         }
       } catch { /* ignore */ }
@@ -122,7 +124,7 @@ function GainStagingStep1() {
       if (remaining <= 0) {
         clearInterval(countdownInterval);
         setMeasurePhase("playing");
-        sendGainStaging({ req: 1, cmd: "gain_staging", action: "start_measure", channel: 0 });
+        sendGainStaging({ action: "start_measure", channel: 0 });
       }
     }, 1000);
     countdownRef.current = countdownInterval as unknown as ReturnType<typeof setInterval>;
@@ -131,14 +133,15 @@ function GainStagingStep1() {
 
   const handleSaveProfile = async () => {
     if (!profileName.trim()) return;
-    sendGainStaging({ req: 1, cmd: "gain_staging", action: "save_profile", name: profileName.trim() });
+    sendGainStaging({ action: "save_profile", name: profileName.trim() });
     setShowProfileInput(false);
     setProfileName("");
   };
 
   const handleApply = () => {
     if (recommendedGain !== null) {
-      sendGainStaging({ req: 1, cmd: "gain_staging", action: "apply", gain_db: recommendedGain });
+      sendGainStaging({ action: "apply", profile_name: "", input_trim: recommendedGain, output_trim: 0 });
+      setInputGain(recommendedGain);
       closeGainStaging();
     }
   };
@@ -187,12 +190,12 @@ function GainStagingStep1() {
                     <span class="gs-profile-name">{p.name}</span>
                     <div class="gs-profile-actions">
                       <button class="gs-btn-sm" onClick={() => {
-                        sendGainStaging({ req: 1, cmd: "gain_staging", action: "load_profile", profile_id: p.id });
+                        sendGainStaging({ action: "load_profile", name: p.name });
                         closeGainStaging();
                       }}>Load</button>
                       <button class="gs-btn-sm gs-btn-danger" onClick={() => {
-                        sendGainStaging({ req: 1, cmd: "gain_staging", action: "delete_profile", profile_id: p.id });
-                        setProfiles((prev) => prev.filter((x) => x.id !== p.id));
+                        sendGainStaging({ action: "delete_profile", name: p.name });
+                        setProfiles((prev) => prev.filter((x) => x.name !== p.name));
                       }}>Delete</button>
                     </div>
                   </div>
@@ -284,7 +287,11 @@ function GainStagingStep1() {
 
             <div class="gs-step-actions">
               <button class="gs-btn gs-btn-danger" onClick={handleCancel}>Cancel</button>
-              <button class="gs-btn gs-btn-primary" disabled={measurePhase !== "done"}>
+              <button
+                class="gs-btn gs-btn-primary"
+                disabled={measurePhase !== "done"}
+                onClick={() => setStep(3)}
+              >
                 {measurePhase === "done" ? "View Results" : measurePhase === "playing" ? "Measuring…" : "Hold for 5s"}
               </button>
             </div>
@@ -375,9 +382,13 @@ function GainStagingStep1() {
   );
 }
 
+let gsReqId = 1000;
+/** Send a gain_staging request in the standard `{type:"req", id, cmd, args}` envelope. */
 function sendGainStaging(msg: Record<string, unknown>) {
   const w = bridge.socket;
-  if (w && w.readyState === WebSocket.OPEN) {
-    try { w.send(JSON.stringify(msg)); } catch {}
-  }
+  if (!w || w.readyState !== WebSocket.OPEN) return;
+  const { action, ...rest } = msg as { action: string; [k: string]: unknown };
+  try {
+    w.send(JSON.stringify({ type: "req", id: gsReqId++, cmd: "gain_staging", args: { action, ...rest } }));
+  } catch { /* ignore */ }
 }

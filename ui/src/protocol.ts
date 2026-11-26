@@ -84,6 +84,8 @@ export interface GainStagingState {
   sdr?: number;
   /** Profile name used for the last measurement, if any. */
   profileName?: string;
+  /** Profile names from the last `gain_staging_profiles` event. UI-only. */
+  profileNames?: string[];
   /** Whether a level stream is active. */
   active?: boolean;
   /** Progress of the measurement in percent (0–100). */
