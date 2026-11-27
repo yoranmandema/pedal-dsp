@@ -121,8 +121,11 @@ term is the device buffer, which is the interface's own setting.
 
 The shell (`shell/`) is the Tauri webview that spawns the engine and loads the
 Preact UI. On the Pi it runs borderless fullscreen on the touchscreen (US-3.1,
-US-3.4). Until those are done, any WebSocket client can drive the engine; the
-UI in `ui/` is the intended one.
+US-3.4) — that's `shell/tauri.linux.conf.json`, a platform-specific override
+merged over the base `shell/tauri.conf.json` only when building for Linux (the
+Pi's OS). The base config stays a normal resizable, decorated window, which is
+what macOS dev/ship builds use. Until those are done, any WebSocket client can
+drive the engine; the UI in `ui/` is the intended one.
 
 ## Troubleshooting
 
