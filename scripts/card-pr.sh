@@ -39,7 +39,7 @@ case "$cmd" in
     gh-bot review pr review "$url" --approve --body "Reviewed by pedal-reviewer against card $card." >/dev/null 2>&1 || true
     gh-bot review pr merge "$url" --squash --auto --delete-branch >/dev/null
     for _ in $(seq 1 90); do   # up to ~30 min for CI
-      state=$(gh-bot review pr view "$url" --json state -q .state)
+      state=$(gh-bot review pr view "$url" --json state -q .state 2>/dev/null)
       [ "$state" = MERGED ] && { echo "MERGED $url"; exit 0; }
       failed=$(gh-bot review pr checks "$url" --json name,bucket -q '[.[] | select(.bucket=="fail") | .name] | join(", ")' 2>/dev/null || true)
       [ -n "$failed" ] && { echo "CHECKS-FAILED ($failed) $url"; exit 4; }
@@ -48,7 +48,7 @@ case "$cmd" in
     echo "TIMEOUT $url (auto-merge stays armed; it merges once checks pass)"; exit 5 ;;
   status)
     url=$(pr_url); [ -n "$url" ] || { echo "no PR for $branch"; exit 0; }
-    gh-bot dev pr view "$url" --json url,state,mergeStateStatus,reviewDecision -q '"\(.url) \(.state) \(.mergeStateStatus) review=\(.reviewDecision)"'
+    gh-bot dev pr view "$url" --json url,state,mergeStateStatus,reviewDecision -q '"\(.url) \(.state) \(.mergeStateStatus) review=\(.reviewDecision)"' 2>/dev/null
     gh-bot dev pr checks "$url" || true ;;
   *) echo "unknown command $cmd" >&2; exit 2 ;;
 esac
