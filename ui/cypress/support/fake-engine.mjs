@@ -220,6 +220,20 @@ export async function startFakeEngine({ port = 9400, host = "127.0.0.1" } = {}) 
         return commit();
       }
 
+      case "createRouting": {
+        const { source, dest } = args;
+        if (!source || !dest) throw new Error("createRouting needs source and dest");
+        if (source.channel === dest.channel) throw new Error("routing must cross channels");
+        state.routings = state.routings ?? [];
+        state.routings.push({ id: `route-${state.routings.length + 1}-${Date.now()}`, source, dest });
+        return commit();
+      }
+
+      case "removeRouting": {
+        state.routings = (state.routings ?? []).filter((r) => r.id !== args.id);
+        return commit();
+      }
+
       case "setSource": {
         state.source = ["riff", "live", "silence"].includes(args.source) ? args.source : "riff";
         return commit();
