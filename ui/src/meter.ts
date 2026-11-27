@@ -51,8 +51,12 @@ export const GR_DB_MIN = -60;
 /** The multiband compressor's per-band gain-reduction meter range (dB). */
 export const GR_DB_MAX = 0;
 
-/** Convert a raw gain-reduction dB value into a 0..100 percent track fill. */
+/** Convert a raw gain-reduction dB value into a 0..100 percent track fill.
+ *
+ * 0 dB (no reduction) → 0 %, -60 dB (full reduction) → 100 %.
+ * The CSS meter-fill uses `top: 0` so height grows downward from the top.
+ */
 export function grDbToPercent(grDb: number, min = GR_DB_MIN, max = GR_DB_MAX): number {
   const v = Math.max(min, Math.min(max, grDb));
-  return ((v - min) / (max - min)) * 100;
+  return ((max - v) / (max - min)) * 100;
 }
