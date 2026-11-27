@@ -1,0 +1,725 @@
+/* Gain Staging Modal and Block styles.
+ *
+ * Purpose-built CSS for the GainStaging modal and block renderer. Uses the
+ * project's shared tokens (`--color-*`, `--text-*`, `--radius-*`, `--spacing`).
+ */
+
+/* ============================================================================
+   MODAL — backdrop, card, header
+   ============================================================================ */
+
+.gs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.gs-modal-card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.gs-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+  flex-shrink: 0;
+}
+
+.gs-modal-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.2px;
+}
+
+.gs-modal-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: var(--text-xl);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+
+.gs-modal-close:hover {
+  color: var(--color-text);
+  background: var(--color-line-soft);
+}
+
+/* ============================================================================
+   BUTTONS
+   ============================================================================ */
+
+.gs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease,
+    opacity 0.1s ease;
+  font-family: var(--font-sans);
+}
+
+.gs-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary */
+.gs-btn-primary {
+  background: var(--color-amber);
+  color: var(--color-amber-ink);
+  border-color: var(--color-amber);
+}
+
+.gs-btn-primary:hover:not(:disabled) {
+  background: var(--color-amber-hi);
+  border-color: var(--color-amber-hi);
+}
+
+/* Secondary */
+.gs-btn-secondary {
+  background: var(--color-raised);
+  color: var(--color-text);
+  border-color: var(--color-line);
+}
+
+.gs-btn-secondary:hover:not(:disabled) {
+  background: var(--color-raised-2);
+  border-color: var(--color-line-hi);
+}
+
+/* Outline */
+.gs-btn-outline {
+  background: transparent;
+  color: var(--color-text);
+  border-color: var(--color-line-hi);
+}
+
+.gs-btn-outline:hover:not(:disabled) {
+  background: var(--color-raised);
+}
+
+/* Danger */
+.gs-btn-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  border-color: var(--color-danger-line);
+}
+
+.gs-btn-danger:hover:not(:disabled) {
+  background: #3d2424;
+  border-color: #6e4242;
+}
+
+/* Small variant */
+.gs-btn-sm {
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+}
+
+/* ============================================================================
+   STEP containers
+   ============================================================================ */
+
+.gs-step {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.gs-step-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+
+.gs-section-title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 var(--space-2);
+}
+
+.gs-step-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* ============================================================================
+   INSTRUMENT SELECTION (Step 1)
+   ============================================================================ */
+
+.gs-instruments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.gs-instrument-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-2);
+}
+
+.gs-instrument-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-3) var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-well);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+
+.gs-instrument-btn:hover {
+  border-color: var(--color-line-hi);
+  background: var(--color-raised);
+}
+
+.gs-instrument-btn.on {
+  border-color: var(--color-amber);
+  background: hsl(var(--_amber-h, 222), 45%, 20%);
+  box-shadow: 0 0 0 1px var(--color-amber-dim);
+}
+
+.gs-inst-icon {
+  font-size: 20px;
+}
+
+.gs-inst-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.gs-inst-target {
+  font-size: var(--text-2xs);
+  color: var(--color-muted);
+}
+
+/* Profiles */
+.gs-profiles {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+.gs-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gs-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+}
+
+.gs-profile-row:hover {
+  background: var(--color-well);
+}
+
+.gs-profile-name {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gs-profile-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Profile input */
+.gs-profile-input {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gs-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.1s ease;
+}
+
+.gs-input:focus {
+  border-color: var(--color-amber);
+}
+
+/* ============================================================================
+   LEVEL MEASUREMENT (Step 2)
+   ============================================================================ */
+
+.gs-measure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.gs-measure-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.gs-measure-instrument {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.gs-meter-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-well);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+}
+
+/* Vertical meter — the core visual */
+.gs-meter-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gs-meter-track {
+  position: relative;
+  width: 44px;
+  height: 260px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Colour zones (background strips inside the track) */
+.gs-meter-zone {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 33%;
+}
+
+.gs-zone-green {
+  background: hsl(145, 40%, 30%);
+}
+
+.gs-zone-yellow {
+  background: hsl(45, 60%, 28%);
+}
+
+.gs-zone-red {
+  background: hsl(0, 50%, 28%);
+}
+
+/* Current level fill — climbs from bottom */
+.gs-meter-level {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background: var(--color-amber);
+  transition: bottom 0.08s linear;
+}
+
+/* Peak indicator — small dot at highest point */
+.gs-meter-peak {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--color-amber-edge);
+  box-shadow: 0 0 4px var(--color-amber-edge);
+  transition: bottom 0.15s ease;
+}
+
+/* dBFS scale labels beside the track */
+.gs-meter-scale {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 260px;
+  padding: 4px 0;
+  font-size: var(--text-2xs);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gs-scale-min {
+  color: var(--color-amber-dim);
+}
+
+/* dBFS readout — big numeric next to meter */
+.gs-dbfs-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.gs-dbfs-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+.gs-dbfs-unit {
+  font-size: var(--text-2xs);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Countdown / playing state area */
+.gs-phase-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gs-countdown,
+.gs-playing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gs-countdown-text {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.gs-playing-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-amber);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.gs-playing-text {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Progress bar under countdown */
+.gs-progress-bar {
+  width: 180px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-line-soft);
+  overflow: hidden;
+}
+
+.gs-progress-fill {
+  height: 100%;
+  background: var(--color-amber);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+/* ============================================================================
+   RESULTS (Step 3)
+   ============================================================================ */
+
+.gs-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.gs-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.gs-results-actions {
+  justify-content: flex-start;
+}
+
+.gs-results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.gs-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  background: var(--color-well);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.gs-result-card-cta {
+  border-color: var(--color-amber-dim);
+  background: hsl(222, 45%, 16%);
+}
+
+.gs-result-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.gs-result-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.gs-value-primary {
+  color: var(--color-text);
+}
+
+.gs-value-warning {
+  color: var(--color-amber);
+}
+
+.gs-value-cta {
+  color: var(--color-amber-edge);
+}
+
+/* Comparison bars — signal vs target */
+.gs-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-well);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+}
+
+.gs-comparison-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.gs-comparison-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+.gs-bar-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-line-soft);
+  overflow: hidden;
+}
+
+.gs-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+.gs-bar-current {
+  background: var(--color-amber);
+}
+
+.gs-bar-target {
+  background: var(--color-ok);
+}
+
+/* ============================================================================
+   BLOCK CARD — inline gain-staging meter block
+   ============================================================================ */
+
+.gs-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-2);
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+  min-height: 80px;
+}
+
+.gs-block:hover {
+  border-color: var(--color-line-hi);
+  box-shadow: 0 0 0 1px var(--color-line-hi);
+}
+
+.gs-block-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gs-block-icon {
+  font-size: 14px;
+}
+
+.gs-block-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Vertical meter inside the block */
+.gs-block-meter {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.gs-block-meter-track {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  min-height: 40px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.gs-block-meter-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  transition: height 0.08s linear;
+}
+
+.gs-meter-green {
+  background: hsl(145, 40%, 38%);
+}
+
+.gs-meter-yellow {
+  background: hsl(45, 60%, 38%);
+}
+
+.gs-meter-red {
+  background: hsl(0, 50%, 38%);
+}
+
+.gs-block-meter-peak {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-amber-edge);
+  box-shadow: 0 0 3px var(--color-amber-edge);
+  transition: bottom 0.12s ease;
+}
+
+/* dBFS readout inside the block */
+.gs-block-dbfs {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.gs-block-dbfs-value {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.gs-block-dbfs-unit {
+  font-size: var(--text-2xs);
+  color: var(--color-muted);
+}
