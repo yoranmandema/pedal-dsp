@@ -18,7 +18,6 @@ import {
   setMasterVolume,
   setSources,
   state,
-  meters,
 } from "../state";
 
 /** Live state of a pointer-driven block drag (a card reorder). */
@@ -189,7 +188,7 @@ function EmptyChannel({ channel }: { channel: import("../protocol").Channel }) {
           min-content width (every card laid out in a row) must not be allowed
           to widen the grid track. Without it the channel grows past the
           viewport and the whole chain panel scrolls instead. */}
-      <div class="strip flex min-h-[calc(102px+var(--ui-card-act)-24px)] compact:min-h-0 min-w-0 items-center gap-2 overflow-x-auto px-2 py-[18px] compact:py-2" ref={strip}>
+      <div class="strip flex min-h-[102px] min-w-0 items-center gap-2 overflow-x-auto px-2 py-[18px]" ref={strip}>
         <span class="port flex-none" aria-hidden="true">
           <PortIcon size={14} />
         </span>
@@ -568,7 +567,7 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
       <ChannelHead channel={channel} />
 
       <div
-        class="strip relative flex min-h-[calc(102px+var(--ui-card-act)-24px)] compact:min-h-0 min-w-0 items-center gap-2 overflow-x-auto px-2 py-[18px] compact:py-2"
+        class="strip relative flex min-h-[102px] min-w-0 items-center gap-2 overflow-x-auto px-2 py-[18px]"
         ref={strip}
       >
         <span class="port flex-none" aria-hidden="true">
@@ -582,11 +581,11 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
               {/* Always-mounted slot so the cards themselves are never added or
                   removed mid-drag (that would break pointer capture). */}
               <div
-                class={`block-placeholder flex-none h-[calc(66px+var(--ui-card-act))] rounded-lg border-[1px] border-dashed border-transparent overflow-hidden transition-[width,margin-right,border-color,background-color] duration-110 ${drag && drag.insert === i && drag.insert !== drag.from ? "w-[116px] mr-0 border-amber-dim bg-[rgba(232,163,61,0.08)]" : "w-0 mr-[-8px]"}`}
+                class={`block-placeholder flex-none h-[66px] rounded-lg border-[1px] border-dashed border-transparent overflow-hidden transition-[width,margin-right,border-color,background-color] duration-110 ${drag && drag.insert === i && drag.insert !== drag.from ? "w-[116px] mr-0 border-amber-dim bg-[rgba(232,163,61,0.08)]" : "w-0 mr-[-8px]"}`}
               />
               <div
                 class={[
-                  "block-card cat-scope flex-none w-[116px] h-[calc(66px+var(--ui-card-act))] rounded-lg border border-[#353843] border-l-3 bg-linear-to-r from-cat-soft to-[#1b1c22] shadow-card grid grid-rows-[32px_1fr_var(--ui-card-act)] items-center justify-items-center gap-0.5 px-2 py-1 cursor-grab select-none relative touch-none transition-[border-color,box-shadow,transform] duration-120 hover:border-[#4a4d59]",
+                  "block-card cat-scope flex-none w-[116px] h-[66px] rounded-lg border border-[#353843] border-l-3 bg-linear-to-r from-cat-soft to-[#1b1c22] shadow-card grid grid-rows-[32px_1fr] items-center justify-items-center gap-0.5 px-2 py-1 cursor-grab select-none relative touch-none transition-[border-color,box-shadow,transform] duration-120 hover:border-[#4a4d59]",
                   b.bypass ? "bypass opacity-45" : "",
                   isSel ? "selected border-cat shadow-[inset_0_0_0_1px_var(--cat)] -translate-y-0.5" : "",
                   drag?.id === b.id ? "dragging border-dashed border-[#4a4d59] opacity-35" : "",
@@ -618,12 +617,11 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                 title={`${b.name} — drag to reorder, click to edit`}
                 aria-label={b.name}
               >
-                {/* Bypass / Remove: a real in-flow row at the foot of the card
-                    (always visible, no hover), so no neighbouring card or the
-                    routing handle can cover them. */}
-                <div class="card-actions row-start-3 flex w-full gap-1 self-stretch">
+                <div
+                  class="card-actions absolute top-1 right-1 flex gap-1"
+                >
                   <button
-                    class={`icon-btn bypass flex-1 min-h-6 rounded-md grid place-items-center bg-[#26282f] text-muted border border-line-soft ${b.bypass ? "bg-amber text-amber-ink border-amber-edge" : ""}`}
+                    class={`icon-btn bypass absolute top-1 left-1 size-6 after:absolute after:-inset-2.5 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft ${b.bypass ? "bg-amber text-amber-ink border-amber-edge" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       void setBypass(channel.id, b.id, !b.bypass);
@@ -635,7 +633,7 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                     <PowerIcon size={14} />
                   </button>
                   <button
-                    class="icon-btn remove flex-1 min-h-6 rounded-md grid place-items-center bg-[#26282f] text-muted border border-line-soft hover:text-[#ff8a7a] hover:border-[#5a3535]"
+                    class="icon-btn remove absolute top-1 right-1 size-6 after:absolute after:-inset-2.5 rounded-full grid place-items-center bg-[#26282f] text-muted border border-line-soft hover:text-[#ff8a7a] hover:border-[#5a3535]"
                     onClick={(e) => {
                       e.stopPropagation();
                       void removeBlock(channel.id, b.id);
@@ -657,19 +655,6 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                     Multiband ({Math.min(4, Math.max(2, Math.round(b.params.bands ?? 3)))}b)
                   </span>
                 )}
-                {b.type === "dynamics.smart_noise_gate" && (() => {
-                  const gr = meters.value.gateReduction ?? 0;
-                  const pct = Math.min(100, gr * 100);
-                  return (
-                    <span
-                      class="gate-chip absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] w-[40px] rounded-sm pointer-events-none"
-                      style={{
-                        background: `linear-gradient(to right, #22c55e ${pct}%, #ef4444 ${pct}%)`,
-                      }}
-                      title={`Gate reduction: ${gr > 0 ? Math.round(gr) : 0}%`}
-                    />
-                  );
-                })()}
                 <span
                   class={`block-name max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold text-center leading-[1.2] ${b.bypass ? "line-through" : ""}`}
                 >
@@ -696,7 +681,7 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
           );
         })}
         <div
-          class={`block-placeholder flex-none h-[calc(66px+var(--ui-card-act))] rounded-lg border-[1px] border-dashed border-transparent overflow-hidden transition-[width,margin-right,border-color,background-color] duration-110 ${drag && drag.insert === channel.blocks.length && drag.insert !== drag.from ? "w-[116px] mr-0 border-amber-dim bg-[rgba(232,163,61,0.08)]" : "w-0 mr-[-8px]"}`}
+          class={`block-placeholder flex-none h-[66px] rounded-lg border-[1px] border-dashed border-transparent overflow-hidden transition-[width,margin-right,border-color,background-color] duration-110 ${drag && drag.insert === channel.blocks.length && drag.insert !== drag.from ? "w-[116px] mr-0 border-amber-dim bg-[rgba(232,163,61,0.08)]" : "w-0 mr-[-8px]"}`}
         />
         {routeRef.current ? (
           <path

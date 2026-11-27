@@ -107,9 +107,6 @@ export interface Meters {
   out: number;
   cpu: number;
   xruns: number;
-  /** 0–100 dB reduction from compressor; optional, set per-block */
-  gateReduction?: number;
-  compressorReduction?: number;
 }
 
 // --- Messages --------------------------------------------------------------
@@ -167,7 +164,7 @@ export interface ErrorEvent {
   payload: { message: string };
 }
 
-export type ServerMessage = Response | StateEvent | MetersEvent | LooperEvent | TunerEvent | ErrorEvent | DownloadEvent;
+export type ServerMessage = Response | StateEvent | MetersEvent | LooperEvent | TunerEvent | ErrorEvent;
 
 export function isState(msg: ServerMessage): msg is StateEvent {
   return msg.type === "event" && msg.event === "state";
@@ -192,39 +189,6 @@ export interface LooperEvent {
 
 export function isLooper(msg: ServerMessage): msg is LooperEvent {
   return msg.type === "event" && msg.event === "looper";
-}
-
-/** Model download item reported by the engine. */
-export interface DownloadItem {
-  /** Unique download id (UUID). */
-  id: string;
-  /** Model name or path. */
-  name: string;
-  /** One of: queued | progress | completed | paused | error | cancelled. */
-  status: string;
-  /** Progress fraction 0..1, or null when not applicable. */
-  progress: number | null;
-  /** Bytes received so far, or null. */
-  receivedBytes: number | null;
-  /** Bytes total, or null if unknown. */
-  totalBytes: number | null;
-  /** Resolved local file path (present when status is completed). */
-  path: string | null;
-  /** Error message (present when status is error). */
-  error: string | null;
-  /** Model index id (the key for the model index entry). */
-  modelId: string;
-}
-
-/** Download status event, emitted whenever a download changes. */
-export interface DownloadEvent {
-  type: "event";
-  event: "download";
-  payload: DownloadItem;
-}
-
-export function isDownload(msg: ServerMessage): msg is DownloadEvent {
-  return msg.type === "event" && msg.event === "download";
 }
 
 export function asState(payload: unknown): State {
