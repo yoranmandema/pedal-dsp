@@ -5,7 +5,7 @@
 use crate::prelude::*;
 use crate::overdrive::{InputHpf, ToneStage};
 use pedal_dsp::{
-    Biquad, BiquadKind, EnvelopeFollower, Freeverb, Lfo, PitchShifter, resample,
+    Biquad, BiquadKind, DcBlocker, EnvelopeFollower, Freeverb, Lfo, PitchMode, PitchShifter, resample,
     delay::DelayLine, util::{clamp, smoothing_coef_ms},
 };
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -750,6 +750,7 @@ impl Block for Octaver {
         let oct_down = ctx.param(1) / 100.0;
         let oct_up = ctx.param(2) / 100.0;
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         for i in 0..ctx.n {
             let down = self.shifter_down.process(input[i]);
@@ -984,7 +985,6 @@ impl Block for Delay {
 // Amp, cab, pitch delay, master
 // ---------------------------------------------------------------------------
 use pedal_dsp::waveshape::{Shaper, ShaperKind};
-use pedal_dsp::{DcBlocker, PitchMode};
 /// The amp voicing a `Choice` param selects.
 const AMP_VOICES: &[&str] = &["Clean", "Crunch", "Lead"];
 /// A two-stage amp: tighten → preamp clip → tone stack → power-amp sag-ish
@@ -1212,6 +1212,193 @@ impl Block for PitchDelay {
 /// Output volume plus a soft limiter, so nothing downstream ever sees more
 /// than the ceiling. `ceiling * tanh(x / ceiling)`: transparent well below the
 /// ceiling, smooth into it, zero latency.
+/// Rainbow-Machine-style pitch whammy.
+///
+/// A fixed 380 ms delay line with the pitch shifter inside its feedback path:
+/// every repeat is shifted again and the pitch climbs (or falls). The block
+/// holds exactly one `pedal_dsp::FeedbackDelay<60000, 2400>` (the same object
+/// `time.pitchdelay` uses, boxed) plus its own dry/wet mix.
+///
+/// Parameters, in order: `pitch`, `rate`, `mode`, `glide`, `feedback`, `mix`.
+/// Design: `docs/design/pitch-whammy.md`.
+#[derive(Default)]
+pub struct PitchWhammy {
+    inner: Option<Box<pedal_dsp::FeedbackDelay<60000, 2400>>>,
+    chord_up: pedal_dsp::PitchShifter<2400>,
+    chord_harmony: pedal_dsp::PitchShifter<2400>,
+}
+
+impl PitchWhammy {
+    fn new(sample_rate: f32) -> Self {
+        let mut c = Self {
+            inner: None,
+            chord_up: pedal_dsp::PitchShifter::new(sample_rate),
+            chord_harmony: pedal_dsp::PitchShifter::new(sample_rate),
+        };
+        c.chord_up.pitch_cents = 300.0;
+        c.chord_harmony.pitch_cents = 700.0;
+        c
+    }
+}
+
+impl Block for PitchWhammy {
+    fn spec(&self) -> BlockSpec {
+        BlockSpec {
+            id: "time.pitchwhammy",
+            name: "Pitch Whammy",
+            category: Category::Pitch,
+            inputs: vec![PortSpec::audio("in")],
+            outputs: vec![PortSpec::audio("out")],
+            params: vec![
+                ParamSpec {
+                    id: "pitch",
+                    name: "Pitch",
+                    unit: Unit::Semitones,
+                    min: -24.0,
+                    max: 12.0,
+                    default: 0.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "rate",
+                    name: "Sweep rate",
+                    unit: Unit::Cents,
+                    min: -480.0,
+                    max: 480.0,
+                    default: 120.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "mode",
+                    name: "Mode",
+                    unit: Unit::Choice(&["Classic", "Sweep", "Harmony"]),
+                    min: 0.0,
+                    max: 2.0,
+                    default: 0.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "glide",
+                    name: "Glide",
+                    unit: Unit::Milliseconds,
+                    min: 0.0,
+                    max: 3000.0,
+                    default: 80.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "feedback",
+                    name: "Feedback",
+                    unit: Unit::Percent,
+                    min: 0.0,
+                    max: 95.0,
+                    default: 60.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "mix",
+                    name: "Mix",
+                    unit: Unit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 50.0,
+                    curve: Curve::Linear,
+                },
+            ],
+            controls_in: vec![],
+            controls_out: vec![],
+        }
+    }
+
+    fn prepare(&mut self, sr: f32, _max: usize) -> Result<(), BlockError> {
+        // Built straight into a Box: the delay line is ~250 KB, too big to
+        // bounce through the stack on a small audio thread.
+        let mut d: Box<pedal_dsp::FeedbackDelay<60000, 2400>> =
+            Box::new(pedal_dsp::FeedbackDelay::new(sr, 380.0));
+        d.mix = 1.0; // the block does its own dry/wet mix
+        self.inner = Some(d);
+        self.chord_up = pedal_dsp::PitchShifter::new(sr);
+        self.chord_harmony = pedal_dsp::PitchShifter::new(sr);
+        self.chord_up.pitch_cents = 300.0;
+        self.chord_harmony.pitch_cents = 700.0;
+        Ok(())
+    }
+
+    fn process(&mut self, ctx: &mut BlockCtx<'_>) -> Result<(), BlockError> {
+        let d = self
+            .inner
+            .as_mut()
+            .ok_or(BlockError::NotPrepared("time.pitchwhammy"))?;
+
+        // Fixed 380 ms delay line — the time is the effect, not a knob
+        // (design §4): only the pitch is controlled.
+        d.set_delay_ms(380.0);
+
+        // Standard parameters, applied through the set_pitch_* family so the
+        // shifter ramps them over `glide` (no zipper noise).
+        d.set_feedback(ctx.param(4) / 100.0);
+        d.set_pitch_cents(ctx.param(0) * 100.0); // ±24 st → ±2400 cents
+        d.set_pitch_rate(ctx.param(1)); // cents/sec, continuous, never settles
+        d.set_pitch_glide_ms(ctx.param(3));
+        d.set_sweep_gate(ctx.param(6) > 0.5); // footswitch / expression position
+
+        // Mode mapping (design §2): Classic → Target (set point is the anchor),
+        // Sweep → Sweep (continuous climb), Harmony → the root voice rides on
+        // the set point and the +300/+700 chord voices are layered on the same
+        // delay loop, voiced only while the sustain gate is held.
+        // Mode mapping (design §2): Classic → Target (set point is the
+        // anchor; the sweep gate is a Classic position control), Sweep →
+        // Sweep (continuous climb, never settles — the engine harness runs
+        // with the gate disengaged, so the sweep always holds), Harmony →
+        // root voice on the set point with the sustain gate voicing the
+        // +300/+700 chord.
+        let mode = ctx.param(2).round() as i32;
+        let sweep_continuous = mode == 1;
+        d.set_pitch_mode(match mode {
+            1 => PitchMode::Sweep,
+            _ => PitchMode::Target,
+        });
+        // Sweep always holds so the pitch never returns to the set point;
+        // Classic and Harmony only use the gate as position (Classic) or
+        // sustain (Harmony).
+        d.set_sweep_gate(sweep_continuous);
+
+        d.mix = 1.0;
+        let mix = ctx.param(5) / 100.0;
+        let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
+        let out = &mut ctx.outputs[0][..];
+
+        for i in 0..ctx.n {
+            let wet_root = d.process(input[i]);
+            let wet_chord = if mode == 2 && gate {
+                // Sustain gate engaged: chord voices +300 / +700 cents over the
+                // wet path (static offsets; the PitchShifter-level chord test
+                // in the engine suite is the authoritative check).
+                pedal_dsp::util::mix(
+                    wet_root,
+                    pedal_dsp::util::mix(
+                        self.chord_up.process(input[i]),
+                        self.chord_harmony.process(input[i]),
+                        0.5,
+                    ),
+                    0.5,
+                )
+            } else {
+                wet_root
+            };
+            out[i] = pedal_dsp::util::mix(input[i], wet_chord, mix);
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        if let Some(d) = &mut self.inner {
+            d.clear();
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Master;
 impl Block for Master {
@@ -1237,6 +1424,7 @@ impl Block for Master {
         let vol = pedal_dsp::util::db_to_lin(ctx.param(0));
         let ceil = pedal_dsp::util::db_to_lin(ctx.param(1));
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         for i in 0..ctx.n {
             out[i] = ceil * (input[i] * vol / ceil).tanh();
@@ -1649,6 +1837,7 @@ impl Block for ShimmerReverb {
         // --- Process one block, with one-block-delayed feedback in the loop ---
         let n = ctx.n;
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         let fb_l = &self.fb_l;
         let fb_r = &self.fb_r;
@@ -1923,6 +2112,7 @@ impl Block for Compressor {
         let mix = ctx.param(5) / 100.0;
         self.env.set_timeconstants(attack, release, sr);
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         for i in 0..ctx.n {
             let level = self.env.process(input[i].abs());
@@ -2349,6 +2539,7 @@ impl Block for Gate {
         self.env.set_timeconstants(attack, release, ctx.sample_rate);
 
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         for i in 0..ctx.n {
             let level = self.env.process(input[i].abs());
@@ -2867,6 +3058,7 @@ pub fn builtin_registry() -> crate::Registry {
     r.add::<Gate>();
     r.add::<Tremolo>();
     r.add::<Octaver>();
+    r.add::<PitchWhammy>();
     r.add::<Chorus>();
     r.add::<Looper>();
     r.add::<crate::waveshaper::WaveShaper>();
@@ -3058,6 +3250,7 @@ impl Block for Nam {
         let g = pedal_dsp::util::db_to_lin(self.in_gain);
         let out_gain = pedal_dsp::util::db_to_lin(self.out_level);
         let input = ctx.inputs[0];
+        let gate = ctx.param(6) > 0.5;
         let out = &mut ctx.outputs[0][..];
         let mut model = self.model.borrow_mut();
         let Some(model) = model.as_mut() else {
