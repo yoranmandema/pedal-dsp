@@ -317,6 +317,7 @@ fn doc_round_trips() {
         bypass: false,
         pos: None,
         model: None,
+        curve: None,
     };
     let mut doc = dsp_graph::Doc::new("pitchwhammy-test");
     doc.nodes.push(node);
