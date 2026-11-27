@@ -8,9 +8,9 @@ import { Format, ALL_PARAMS, activeBandIds, type ParamId } from "../params";
 import {
   LocalParamSource,
   useMultibandParams,
-  useMultibandMetersSource,
 } from "../hooks/useParams";
 import { MultibandMeter } from "./MultibandMeter";
+import { meters as liveMeters } from "../state";
 
 /** Format a value by its schema unit (shared by the global knobs). */
 function formatByUnit(unit: string, v: number): string {
@@ -85,7 +85,8 @@ export function MultibandCompressorEditor({
     }
     return p;
   }, [block]);
-  const meters = useMultibandMetersSource();
+  // Reactive: reading the signal re-renders on every `meters` event.
+  const bandMeters = (liveMeters.value.bands ?? []).slice(0, activeBands.length);
   const source = useMemo(() => new LocalParamSource(params), [params]);
   const { values, setValue } = useMultibandParams(source, block);
 
@@ -163,10 +164,10 @@ export function MultibandCompressorEditor({
           <span class={`${ctrlName} ctrlName`}>Gain reduction (GR)</span>
         </div>
         <div class="meter-grid grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {meters.bands.map((m) => (
+          {bandMeters.map((m) => (
             <MultibandMeter key={m.band} band={m.band} grDb={m.gr_db} />
           ))}
-          {meters.bands.length === 0 && (
+          {bandMeters.length === 0 && (
             <div class={`${emptyNote} editor-empty emptyNote`}>
               Select a multiband block to see per-band gain-reduction meters.
             </div>

@@ -50,7 +50,7 @@ export function MultibandMeter({
   // Keep the held peak current on every raw `grDb` change, without
   // re-creating the rAF loop.
   useEffect(() => {
-    peakRef.current = Math.min(peakRef.current, clamped);
+    peakRef.current = clamped; // smoothPeak's slow release lets the bar fall back to 0 dB
   }, [clamped]);
 
   useEffect(() => {
