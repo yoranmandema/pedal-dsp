@@ -37,7 +37,7 @@ case "$cmd" in
   merge)
     url=$(pr_url); [ -n "$url" ] || { echo "card-pr: no open PR for $branch" >&2; exit 2; }
     gh-bot review pr review "$url" --approve --body "Reviewed by pedal-reviewer against card $card." >/dev/null 2>&1 || true
-    gh-bot review pr merge "$url" --squash --auto --delete-branch >/dev/null
+    gh-bot review pr merge "$url" --squash --auto >/dev/null
     for _ in $(seq 1 90); do   # up to ~30 min for CI
       state=$(gh-bot review pr view "$url" --json state -q .state 2>/dev/null)
       [ "$state" = MERGED ] && { echo "MERGED $url"; exit 0; }
