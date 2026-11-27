@@ -5,8 +5,8 @@
 use crate::prelude::*;
 use crate::overdrive::{InputHpf, ToneStage};
 use pedal_dsp::{
-    Biquad, BiquadKind, EnvelopeFollower, Freeverb, Lfo, PitchShifter, resample,
-    delay::DelayLine, util::{clamp, smoothing_coef_ms},
+    Biquad, BiquadKind, EnvelopeFollower, Freeverb, Fft, Lfo, PitchShifter, resample,
+    delay::DelayLine, util::{clamp, db_to_lin, lin_to_db, mix, smoothing_coef_ms},
 };
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -1960,6 +1960,10 @@ pub static MULTIBAND_OUT_DB: [AtomicU32; 4] =
 /// Number of active bands (0 = no multiband block has processed yet).
 pub static MULTIBAND_ACTIVE: AtomicU32 = AtomicU32::new(0);
 
+/// Latest peak gain reduction from the smart noise gate (dB, >= 0), stored as
+/// f32 bits. Written by the audio thread after each block (lock-free).
+pub static SMART_NOISE_GATE_REDUCTION_DB: AtomicU32 = AtomicU32::new(0);
+
 /// Read the latest per-band `(gr_db, out_db)` for all four slots (use
 /// `MULTIBAND_ACTIVE` for how many are live).
 pub fn multiband_meters() -> [(f32, f32); 4] {
@@ -2840,6 +2844,311 @@ impl Block for GraphicEq {
 const G_EQ_CENTRES_HZ: [f32; 10] = [
     31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
+
+// ============================================================================
+// Smart Noise Gate (dynamics.smart_noise_gate)
+// ============================================================================
+//
+// Spectral/adaptive hum and noise removal with optional line-frequency notch
+// pre-filter. Uses overlap-add STFT (N=1024, hop=256, Hann window) with
+// per-bin thresholding and envelope smoothing.
+//
+// Signal flow:
+//   input -> [line-frequency notch (optional)] -> [STFT spectral gate] -> [dry/wet] -> output
+//
+// Parameters:
+//   - strength (0-100%, default 75): wet/dry mix
+//   - threshold (-80 to 0 dB, default -50): noise floor detection threshold
+//   - release (0.1-10 s, default 2.0): envelope release time
+//   - reduction (-100 to 0 dB, default -60): max attenuation per noise bin
+//   - hum_freq (0=50Hz, 1=60Hz, default 1): mains frequency select
+//   - hum_notch_enabled (on/off, default off): enables pre-filter notch
+//
+// Latency: 1024 samples (N = 1024, ~21 ms at 48 kHz)
+
+const N: usize = 1024;
+const HOP: usize = N / 4;
+const BINS: usize = N / 2 + 1;
+/// Fixed gain-opening time (ms). Not user adjustable.
+const ATTACK_MS: f32 = 5.0;
+/// Notch Q: narrow, so it removes the hum line without dulling the low end.
+const NOTCH_Q: f32 = 30.0;
+/// Magnitude floor (-80 dB): keeps log() finite and denormals away.
+const FLOOR: f32 = 1e-4;
+/// Sum of w^2 over the 4 overlapping Hann frames.
+const OLA_NORM: f32 = 1.0 / 1.5;
+/// Amplitude scale: a full-scale sine reads 1.0 (0 dB) at its bin.
+const MAG_SCALE: f32 = 4.0 / N as f32;
+
+pub struct SmartNoiseGate {
+    fft: Fft<N>,
+    window: [f32; N],
+    /// Circular history of the (post-notch) input; also the delayed dry path.
+    in_ring: [f32; N],
+    /// Circular overlap-add accumulator.
+    out_ring: [f32; N],
+    /// Scratch spectrum.
+    re: [f32; N],
+    im: [f32; N],
+    /// Per-bin smoothed linear gain.
+    gain: [f32; BINS],
+    /// Running sample index modulo N.
+    pos: usize,
+    /// Samples since the last frame.
+    hop_count: usize,
+
+    sample_rate: f32,
+    attack_coef: f32,
+    release_coef: f32,
+    last_release_s: f32,
+    notch: [Biquad; 3],
+    notch_hz: f32,
+
+    // Peak reduction meter (written per-frame, read by meters thread)
+    peak_reduction_db: f32,
+}
+
+impl Default for SmartNoiseGate {
+    fn default() -> Self {
+        let mut window = [0.0f32; N];
+        for (i, w) in window.iter_mut().enumerate() {
+            // Periodic Hann: sums to a constant at hop N/4.
+            *w = 0.5 - 0.5 * (2.0 * core::f32::consts::PI * i as f32 / N as f32).cos();
+        }
+        let mut s = Self {
+            fft: Fft::<N>::new(),
+            window,
+            in_ring: [0.0; N],
+            out_ring: [0.0; N],
+            re: [0.0; N],
+            im: [0.0; N],
+            gain: [1.0; BINS],
+            pos: 0,
+            hop_count: 0,
+            sample_rate: 48_000.0,
+            attack_coef: 0.0,
+            release_coef: 0.0,
+            last_release_s: -1.0,
+            notch: [Biquad::identity(); 3],
+            notch_hz: 0.0,
+            peak_reduction_db: 0.0,
+        };
+        s.set_rates(48_000.0, 2.0);
+        s
+    }
+}
+
+impl SmartNoiseGate {
+    /// Frame-rate smoothing coefficients (one update per hop).
+    fn set_rates(&mut self, sr: f32, release_s: f32) {
+        let frame_rate = sr / HOP as f32;
+        self.attack_coef = smoothing_coef_ms(ATTACK_MS, frame_rate);
+        self.release_coef = smoothing_coef_ms(release_s * 1000.0, frame_rate);
+        self.last_release_s = release_s;
+    }
+
+    fn design_notches(&mut self, fundamental: f32) {
+        for (i, n) in self.notch.iter_mut().enumerate() {
+            let f = fundamental * (i + 1) as f32;
+            // Keep existing state; swap coefficients only.
+            let d = Biquad::make(BiquadKind::Notch, self.sample_rate, f, NOTCH_Q, 0.0);
+            n.set_coefficients(d.b0, d.b1, d.b2, 1.0, d.a1, d.a2);
+        }
+        self.notch_hz = fundamental;
+    }
+
+    /// Run one STFT frame over the last N input samples and overlap-add it.
+    fn run_frame(&mut self, threshold_db: f32, max_att_db: f32) {
+        // Oldest sample of the frame sits at `pos` (ring is full-circle).
+        for i in 0..N {
+            self.re[i] = self.in_ring[(self.pos + i) % N] * self.window[i];
+            self.im[i] = 0.0;
+        }
+        self.fft.transform(&mut self.re, &mut self.im);
+
+        let mut max_reduction = 0.0f32;
+        for k in 0..BINS {
+            let mag = (self.re[k] * self.re[k] + self.im[k] * self.im[k]).sqrt() * MAG_SCALE;
+            let level_db = lin_to_db(mag.max(FLOOR));
+            let delta = threshold_db - level_db;
+            let target = if delta <= 0.0 {
+                1.0
+            } else {
+                // Expander: 1 dB of extra attenuation per dB below threshold,
+                // floored at the user's maximum reduction.
+                db_to_lin(-delta.min(max_att_db))
+            };
+            let coef = if target > self.gain[k] { self.attack_coef } else { self.release_coef };
+            self.gain[k] += (target - self.gain[k]) * coef;
+            let g = self.gain[k];
+            self.re[k] *= g;
+            self.im[k] *= g;
+            if k != 0 && k != N / 2 {
+                // Conjugate-symmetric mirror keeps the output real.
+                self.re[N - k] = self.re[k];
+                self.im[N - k] = -self.im[k];
+            }
+
+            // Track peak reduction (in dB, positive = attenuation)
+            let reduction = -20.0 * lin_to_db(g.max(FLOOR));
+            if reduction > max_reduction {
+                max_reduction = reduction;
+            }
+        }
+
+        self.fft.inverse(&mut self.re, &mut self.im);
+        for i in 0..N {
+            let idx = (self.pos + i) % N;
+            self.out_ring[idx] += self.re[i] * self.window[i] * OLA_NORM;
+        }
+        self.peak_reduction_db = max_reduction;
+        // Publish to static atomic for meters thread
+        SMART_NOISE_GATE_REDUCTION_DB.store(max_reduction.to_bits(), Ordering::Relaxed);
+    }
+}
+
+impl Block for SmartNoiseGate {
+    fn spec(&self) -> BlockSpec {
+        BlockSpec {
+            id: "dynamics.smart_noise_gate",
+            name: "Smart Noise Gate",
+            category: Category::Dynamics,
+            inputs: vec![PortSpec::audio("in")],
+            outputs: vec![PortSpec::audio("out")],
+            params: vec![
+                ParamSpec {
+                    id: "strength",
+                    name: "Strength",
+                    unit: Unit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 75.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "threshold",
+                    name: "Threshold",
+                    unit: Unit::Decibels,
+                    min: -80.0,
+                    max: 0.0,
+                    default: -50.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "release",
+                    name: "Release",
+                    unit: Unit::Seconds,
+                    min: 0.1,
+                    max: 10.0,
+                    default: 2.0,
+                    curve: Curve::Log,
+                },
+                ParamSpec {
+                    id: "reduction",
+                    name: "Reduction",
+                    unit: Unit::Decibels,
+                    min: -100.0,
+                    max: 0.0,
+                    default: -60.0,
+                    curve: Curve::AmpGain,
+                },
+                ParamSpec {
+                    id: "hum_freq",
+                    name: "Hum Freq",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 1.0,
+                    curve: Curve::Linear,
+                },
+                ParamSpec {
+                    id: "hum_notch_enabled",
+                    name: "Hum Notch",
+                    unit: Unit::Linear,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.0,
+                    curve: Curve::Linear,
+                },
+            ],
+            controls_in: vec![],
+            controls_out: vec![],
+        }
+    }
+
+    fn prepare(&mut self, sr: f32, _max: usize) -> Result<(), BlockError> {
+        self.sample_rate = sr;
+        self.set_rates(sr, 2.0);
+        self.design_notches(60.0);
+        self.reset();
+        Ok(())
+    }
+
+    fn process(&mut self, ctx: &mut BlockCtx<'_>) -> Result<(), BlockError> {
+        let strength = (ctx.param(0) / 100.0).clamp(0.0, 1.0);
+        let threshold_db = ctx.param(1);
+        let release_s = ctx.param(2).max(0.01);
+        let max_att_db = (-ctx.param(3)).max(0.0);
+        let hum_hz = if ctx.param(4) >= 0.5 { 60.0 } else { 50.0 };
+        let notch_on = ctx.param(5) >= 0.5;
+
+        if (release_s - self.last_release_s).abs() > 1e-6 {
+            self.set_rates(self.sample_rate, release_s);
+        }
+        if (hum_hz - self.notch_hz).abs() > 0.5 {
+            self.design_notches(hum_hz);
+        }
+
+        let input = ctx.inputs[0];
+        let out = &mut ctx.outputs[0][..];
+        for i in 0..ctx.n {
+            // Read the slot being retired: the wet/dry signal from N samples ago.
+            let wet = self.out_ring[self.pos];
+            let dry = self.in_ring[self.pos];
+            self.out_ring[self.pos] = 0.0;
+            out[i] = pedal_dsp::util::mix(dry, wet, strength);
+
+            let mut x = input[i];
+            if notch_on {
+                for n in self.notch.iter_mut() {
+                    x = n.process(x);
+                }
+            }
+            self.in_ring[self.pos] = x;
+            self.pos = (self.pos + 1) % N;
+            self.hop_count += 1;
+            if self.hop_count == HOP {
+                self.hop_count = 0;
+                self.run_frame(threshold_db, max_att_db);
+            }
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.in_ring = [0.0; N];
+        self.out_ring = [0.0; N];
+        self.gain = [1.0; BINS];
+        self.pos = 0;
+        self.hop_count = 0;
+        for n in self.notch.iter_mut() {
+            n.reset();
+        }
+        self.peak_reduction_db = 0.0;
+    }
+
+    fn latency_samples(&self) -> u32 {
+        N as u32
+    }
+}
+
+// Expose peak reduction for metering
+impl SmartNoiseGate {
+    pub fn peak_reduction_db(&self) -> f32 {
+        self.peak_reduction_db
+    }
+}
+
 pub fn builtin_registry() -> crate::Registry {
     let mut r = crate::Registry::new();
     r.add::<IoInput>();
@@ -2865,6 +3174,7 @@ pub fn builtin_registry() -> crate::Registry {
     r.add::<Compressor>();
     r.add::<MultibandCompressor>();
     r.add::<Gate>();
+    r.add::<SmartNoiseGate>();
     r.add::<Tremolo>();
     r.add::<Octaver>();
     r.add::<Chorus>();
