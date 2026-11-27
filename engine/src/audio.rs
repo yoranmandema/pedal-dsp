@@ -58,6 +58,9 @@ pub struct Meters {
     pub out_frames: AtomicUsize,
     #[allow(dead_code)]
     pub dropped_executors: AtomicUsize,
+    /// Peak gain reduction from the smart noise gate (dB, >= 0).
+    /// Written by the audio thread after each block; read by the IPC thread.
+    pub reduction_db: AtomicU32,
     /// The latest tuner reading. Written only by the tuner thread (see
     /// [`pedal_engine::tuner::spawn`]); read by the IPC server to broadcast
     /// `event: tuner` to every connected client. `Default` is the inactive
@@ -422,6 +425,11 @@ impl AudioThread {
         self.meters.out_peak.fetch_max(peak.to_bits(), Ordering::Relaxed);
         self.meters.out_frames.fetch_add(n, Ordering::Relaxed);
         self.meters.callback_s.store(start.elapsed().as_secs_f32().to_bits(), Ordering::Relaxed);
+        // Copy smart noise gate peak reduction from block static
+        self.meters.reduction_db.store(
+            dsp_graph::blocks::SMART_NOISE_GATE_REDUCTION_DB.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         &self.scratch_out[..n * self.setup.out_channels]
     }
 
