@@ -66,7 +66,7 @@ const STATE_KEYS: &[&str] = &[
 ];
 
 /// Exact keys of one block entry.
-const BLOCK_KEYS: &[&str] = &["id", "type", "name", "bypass", "params"];
+const BLOCK_KEYS: &[&str] = &["id", "type", "name", "col", "bypass", "params"];
 
 /// Exact keys of one channel entry.
 const CHANNEL_KEYS: &[&str] = &["id", "name", "volume", "sources", "blocks"];
