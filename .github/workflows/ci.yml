@@ -15,6 +15,10 @@ jobs:
     name: Rust tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # One target dir for every step (lifecycle tests look the engine binary up here),
+      # so the engine isn't rebuilt from scratch and rust-cache covers it.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v4
       - name: Install system libs
@@ -27,8 +31,7 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --exclude pedal-shell --exclude pedal-engine
       - name: Run lifecycle tests
-        env:
-          CARGO_TARGET_DIR: ../target
+        timeout-minutes: 10
         run: cargo test -p pedal-engine --test lifecycle
 
   ui:
