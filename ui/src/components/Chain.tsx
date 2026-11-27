@@ -18,6 +18,7 @@ import {
   setMasterVolume,
   setSources,
   state,
+  meters,
 } from "../state";
 
 /** Live state of a pointer-driven block drag (a card reorder). */
@@ -655,6 +656,19 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                     Multiband ({Math.min(4, Math.max(2, Math.round(b.params.bands ?? 3)))}b)
                   </span>
                 )}
+                {b.type === "dynamics.smart_noise_gate" && (() => {
+                  const gr = meters.value.gateReduction ?? 0;
+                  const pct = Math.min(100, gr * 100);
+                  return (
+                    <span
+                      class="gate-chip absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] w-[40px] rounded-sm pointer-events-none"
+                      style={{
+                        background: `linear-gradient(to right, #22c55e ${pct}%, #ef4444 ${pct}%)`,
+                      }}
+                      title={`Gate reduction: ${gr > 0 ? Math.round(gr) : 0}%`}
+                    />
+                  );
+                })()}
                 <span
                   class={`block-name max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold text-center leading-[1.2] ${b.bypass ? "line-through" : ""}`}
                 >

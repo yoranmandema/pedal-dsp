@@ -621,7 +621,7 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
         "getState" | "setParam" | "setMasterVolume" | "setBypass" | "addBlock"
         | "removeBlock" | "moveBlock" | "setSources" | "createRouting"
         | "removeRouting" | "setEnabled" | "setGain" | "setInputGain" | "setMasterOutVolume"
-        | "loadPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
+        | "loadPreset" | "nextPreset" | "prevPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
             match cmd {
                 "getState" => {},
                 "setParam" => {
@@ -677,6 +677,18 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
                 }
                 "loadPreset" => {
                     load_preset(sh, &s("name").ok_or("name")?)?;
+                }
+                "nextPreset" | "prevPreset" => {
+                    // Footswitch stepping: neighbour in the sorted preset list;
+                    // a no-op at either end. Loads via the same block-boundary swap.
+                    let names = sh.presets();
+                    let cur = sh.preset.lock().unwrap().clone();
+                    if let Some(i) = names.iter().position(|n| *n == cur) {
+                        let j = if cmd == "nextPreset" { i + 1 } else { i.wrapping_sub(1) };
+                        if let Some(n) = names.get(j) {
+                            load_preset(sh, n)?;
+                        }
+                    }
                 }
                 "setSource" => {
                     let v = match s("source").as_deref() {
