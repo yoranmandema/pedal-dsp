@@ -37,7 +37,17 @@ case "$mode" in
     free_vite
     # NOTE: no --features custom-protocol. A plain debug build is a Tauri *dev*
     # build and loads Vite's devUrl; that is exactly what gives live reload.
-    cargo build -p pedal-shell
+    #
+    # Build the engine too. pedal-shell does NOT depend on the pedal-engine
+    # *binary* (EngineHandle::spawn finds it on disk at runtime, see
+    # engine_path()), so a `cargo build -p pedal-shell` alone never rebuilds
+    # it. Without this, run.sh silently launches whatever pedal-engine binary
+    # is already sitting in target/debug/ — which goes stale the moment
+    # engine/ changes, and the shell then times out waiting for a `ready`
+    # line from a binary that doesn't speak the current IPC protocol
+    # ("failed to spawn the engine"). This bit us repeatedly because the
+    # staleness is invisible until the handshake fails.
+    cargo build -p pedal-shell -p pedal-engine
     # Node + pnpm: prefer your own install; fall back to the toolchain Hermes
     # ships in ~/.hermes/tools (which kanban workers use) so this works either way.
     if ! command -v node >/dev/null 2>&1; then
