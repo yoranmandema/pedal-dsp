@@ -1,0 +1,69 @@
+name: Auto-create worktree + PR when card transitions to review
+
+on:
+  push:
+    branches: [wt/*]
+  workflow_dispatch:
+    inputs:
+      card_id:
+        description: 'Kanban card ID (e.g., t_1234abcd)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-worktree-and-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get card ID
+        id: card-id
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BRANCH="${{ github.ref_name }}"
+            if echo "$BRANCH" | grep -qE '^wt/(t_[a-f0-9]{8,})$'; then
+              echo "card_id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            elif echo "$BRANCH" | grep -qE '^wt/(feature|fix)/.+/(t_[a-f0-9]{8,})$'; then
+              echo "card_id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "card_id=${{ github.event.inputs.card_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out main
+        if: steps.card-id.outputs.card_id != ''
+        run: |
+          git clone --depth 1 https://github.com/yoranmandema/pedal-dsp.git worktree-checkout
+          cd worktree-checkout
+          git checkout main
+
+      - name: Create worktree for card
+        if: steps.card-id.outputs.card_id != ''
+        run: |
+          cd worktree-checkout
+          BRANCH="wt/${{ steps.card-id.outputs.card_id }}"
+          if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+            echo "Branch $BRANCH already exists, skipping worktree creation"
+          else
+            git checkout -b "$BRANCH" main
+            git push -u origin "$BRANCH"
+            echo "Worktree created: $BRANCH"
+          fi
+
+      - name: Create PR
+        if: steps.card-id.outputs.card_id != ''
+        run: |
+          cd worktree-checkout
+          BRANCH="wt/${{ steps.card-id.outputs.card_id }}"
+          TITLE="Card ${{ steps.card-id.outputs.card_id }}: work in progress"
+          if gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null | grep -q .; then
+            echo "PR already exists for $BRANCH"
+          else
+            gh pr create \
+              --title "$TITLE" \
+              --body "Work in progress for card ${{ steps.card-id.outputs.card_id }}." \
+              --base develop \
+              --head "$BRANCH"
+          fi

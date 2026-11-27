@@ -1,0 +1,56 @@
+name: Monitor blocked PRs
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get blocked PRs
+        id: blocked
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Find PRs on develop with no reviews, opened more than 1 hour ago
+          BLOCKED=$(gh pr list --state open --base develop --json number,title,updatedAt,reviews,headRefName --jq '
+            [.[] | select(.reviews == empty or (.reviews | length == 0)) | select(.updatedAt < (now - 3600 | strftime "%s" | tonumber))]
+            | {number: .number, title: .title, branch: .headRefName}
+          ' 2>/dev/null || echo "[]")
+
+          echo "blocked_prs=$BLOCKED" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on blocked PRs
+        if: steps.blocked.outputs.blocked_prs != '[]' && steps.blocked.outputs.blocked_prs != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_LIST=$(echo "${{ steps.blocked.outputs.blocked_prs }}" | jq -c '.[]')
+          echo "$PR_LIST" | while read -r pr; do
+            number=$(echo "$pr" | jq -r '.number')
+            title=$(echo "$pr" | jq -r '.title')
+            branch=$(echo "$pr" | jq -r '.branch')
+            echo "PR #$number ($title) on $branch is blocked - no reviews yet"
+            gh pr comment $number --body "⚠️ This PR has been open for over 1 hour without a review. Please review or assign a reviewer."
+          done
+
+      - name: Request review on blocked PRs
+        if: steps.blocked.outputs.blocked_prs != '[]' && steps.blocked.outputs.blocked_prs != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_LIST=$(echo "${{ steps.blocked.outputs.blocked_prs }}" | jq -c '.[]')
+          echo "$PR_LIST" | while read -r pr; do
+            number=$(echo "$pr" | jq -r '.number')
+            branch=$(echo "$pr" | jq -r '.branch')
+            # Request review from the card assignee
+            echo "Requesting review for PR #$number on $branch"
+            gh pr ready $number --repo yoranmandema/pedal-dsp
+          done
