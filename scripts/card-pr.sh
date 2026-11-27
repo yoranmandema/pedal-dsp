@@ -24,11 +24,14 @@ case "$cmd" in
     if ! git merge-base --is-ancestor origin/main HEAD; then
       git merge --no-edit -q origin/main || { git merge --abort; echo "card-pr: merging origin/main conflicts — resolve it on this branch (git merge origin/main), run the checks, commit, then rerun" >&2; exit 3; }
     fi
-    PEDAL_GH_ROLE=dev git push -q -u origin "HEAD:$branch"
+    PEDAL_GH_ROLE=dev git push -q -u origin "HEAD:$branch" 2>/tmp/card-pr-push.$$ || { cat /tmp/card-pr-push.$$ >&2; rm -f /tmp/card-pr-push.$$; exit 1; }
+    rm -f /tmp/card-pr-push.$$
     url=$(pr_url)
     if [ -z "$url" ]; then
       body=$(printf 'Kanban card: `%s`\n\n%s\n' "$card" "$(git log --format='- %s' origin/main..HEAD | head -30)")
-      url=$(gh-bot dev pr create --base main --head "$branch" --title "$title ($card)" --body "$body")
+      url=$(gh-bot dev pr create --base main --head "$branch" --title "$title ($card)" --body "$body" 2>/dev/null \
+            | grep -Eo 'https://github.com/[^ ]+/pull/[0-9]+' | tail -1)
+      [ -n "$url" ] || url=$(pr_url)
     fi
     echo "$url" ;;
   merge)
