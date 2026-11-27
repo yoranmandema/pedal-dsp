@@ -15,12 +15,21 @@ use tokio::net::TcpListener;
 
 /// Resolve the built `pedal-engine` binary. The test target's `--bin` env var is
 /// not set for arbitrary `--test` targets, so resolve it from `CARGO_TARGET_DIR`
-/// (agent-env.sh points it at the shared build directory).
+/// (agent-env.sh points it at the shared build directory).  Fall back to the
+/// local `target/` and, if that doesn't have the binary, the workspace root's
+/// `target/` (mono-repo with a shared build tree).
 fn engine_bin() -> std::path::PathBuf {
     if let Ok(t) = std::env::var("CARGO_TARGET_DIR") {
-        return std::path::PathBuf::from(t).join("debug").join("pedal-engine");
+        let p = std::path::PathBuf::from(t).join("debug").join("pedal-engine");
+        if p.exists() { return p; }
     }
+    // Local target (e.g. workspace-root target with CARGO_TARGET_DIR unset but
+    // CARGO_PKG_NAME != pedal-engine).
     let mut p = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    p.push("target/debug/pedal-engine");
+    if p.exists() { return p; }
+    // Workspace root target (pedal-engine is built from workspace root).
+    for _ in 0..4 { p.pop(); } // pedal-engine → debug → target → engine/ → ws root/
     p.push("target/debug/pedal-engine");
     p
 }
