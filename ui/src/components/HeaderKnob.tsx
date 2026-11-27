@@ -1,5 +1,7 @@
 import { useRef, useState } from "preact/hooks";
 
+import { openGainStaging } from "../state";
+
 interface HeaderKnobProps {
   label: string;
   value: number;
@@ -7,6 +9,8 @@ interface HeaderKnobProps {
   max: number;
   defaultValue?: number;
   onChange: (v: number) => void;
+  /** When true, render a compact "GS" trigger button beside the knob. */
+  gsTrigger?: boolean;
 }
 
 /**
@@ -24,6 +28,7 @@ export function HeaderKnob({
   max,
   defaultValue,
   onChange,
+  gsTrigger,
 }: HeaderKnobProps) {
   const [dragging, setDragging] = useState(false);
   const start = useRef({ y: 0, v: 0 });
@@ -84,6 +89,16 @@ export function HeaderKnob({
         }
       }}
     >
+      {/* GS trigger — dark, subtle, rounded; 1.05× scale on hover. */}
+      {gsTrigger && (
+        <button
+          class="flex items-center justify-center rounded-md bg-[#2f323b] px-1.5 py-1 text-[9px] font-bold tracking-widest text-muted transition-transform hover:scale-[1.05]"
+          onClick={() => openGainStaging()}
+          title="Gain Staging"
+        >
+          GS
+        </button>
+      )}
       <div
         class="knob relative size-[var(--ui-touch)] rounded-full bg-[radial-gradient(circle_at_34%_28%,#454956,#1a1b20_72%)] shadow-knob cursor-ns-resize touch-none"
         style={{ "--angle": `${angle}deg` }}

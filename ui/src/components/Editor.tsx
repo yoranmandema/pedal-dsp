@@ -11,6 +11,7 @@ import { GraphicEqEditor } from "./GraphicEqEditor";
 import { MultibandCompressorEditor } from "./MultibandCompressorEditor";
 import { ParametricEQ } from "./ParametricEQ";
 import { MultibandCompressorPanel } from "./MultibandCompressorPanel";
+import { GainStagingBlock } from "./GainStagingBlock";
 
 /** Format a parameter value with the unit the engine declares. */
 function formatParam(p: ParamSpec, v: number): string {
@@ -188,6 +189,10 @@ export function Editor() {
 
   if (block.type === "time.looper") {
     return <LooperEditor />;
+  }
+
+  if (block.type === "gain_staging") {
+    return <GainStagingBlock channel={sel.channel} block={block} />;
   }
 
   const resetAll = (): void => {

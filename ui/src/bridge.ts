@@ -11,6 +11,9 @@ export interface Bridge {
   subscribe(cb: (msg: ServerMessage) => void): () => void;
   /** Close the connection. */
   close(): void;
+  /** Raw WebSocket handle (only available on WebSocketBridge), exported for
+   * components that need direct message-level access (e.g. `GainStagingModal`). */
+  socket: WebSocket | null;
 }
 
 /**
@@ -113,6 +116,12 @@ export class WebSocketBridge implements Bridge {
     for (const { reject } of this.pending.values()) reject(new Error("closed"));
     this.pending.clear();
   }
+
+  /** Raw WebSocket handle, exported for components that need direct access
+   * (e.g. `GainStagingModal` which attaches its own message listener). */
+  get socket(): WebSocket | null {
+    return this.ws;
+  }
 }
 
 /** The in-plugin bridge. The native shell injects this object. */
@@ -149,9 +158,11 @@ export class PluginBridge implements Bridge {
   }
 
   close() {}
-}
 
-/** Pick the right bridge for this environment. */
+  // PluginBridge doesn't expose a raw socket; gain staging doesn't use it
+  // through this path.
+  get socket(): WebSocket | null { return null; }
+}
 export function createBridge(): Bridge {
   if (typeof window !== "undefined" && window.__pedal_native) {
     return new PluginBridge();
