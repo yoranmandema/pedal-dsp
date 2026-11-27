@@ -11,6 +11,7 @@ import { GraphicEqEditor } from "./GraphicEqEditor";
 import { MultibandCompressorEditor } from "./MultibandCompressorEditor";
 import { ParametricEQ } from "./ParametricEQ";
 import { MultibandCompressorPanel } from "./MultibandCompressorPanel";
+import { SmartNoiseGateEditor } from "./SmartNoiseGateEditor";
 
 /** Format a parameter value with the unit the engine declares. */
 function formatParam(p: ParamSpec, v: number): string {
@@ -195,7 +196,9 @@ export function Editor() {
   };
 
   let body: JSX.Element;
-  if (spec?.name === "Multiband Compressor") {
+  if (spec?.name === "Smart Noise Gate") {
+    body = <SmartNoiseGateEditor channel={sel.channel} block={block} onChange={(id, v) => void setParam(sel.channel, sel.block, id, v)} />;
+  } else if (spec?.name === "Multiband Compressor") {
     body = <MultibandCompressorEditor channel={sel.channel} block={block} spec={spec} />;
   } else {
     body = (
