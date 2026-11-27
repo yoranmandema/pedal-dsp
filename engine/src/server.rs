@@ -864,9 +864,11 @@ async fn meters_loop(sh: Arc<Shared>) {
             .iter()
             .map(|b| json!({"band": b.band, "gr_db": b.gr_db, "out_db": b.out_db}))
             .collect();
+        // Smart noise gate peak reduction (dB, >= 0).
+        let smart_gate_reduction = read_f32(&m.reduction_db);
         let text = json!({
             "type":"event","event":"meters",
-            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns,"bands":bands}
+            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns,"bands":bands,"smart_gate_reduction":smart_gate_reduction}
         })
         .to_string();
         broadcast(&sh, text, None);
