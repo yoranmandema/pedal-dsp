@@ -1,5 +1,7 @@
 # UI / engine-state audit — current pedal-dsp UI
 
+> For the grid/cable port, docs/design/ui-grid-port.md is the spec; this file is background.
+
 Audit of the Preact + TypeScript UI in `ui/` and the engine-side Rust state
 model, for the grid / drag-and-drop / cable-rendering / rerouting cards.
 Deliverable: `docs/ui-port-notes-current.md` (this file). All paths are
