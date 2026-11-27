@@ -2,20 +2,26 @@ name: CI
 
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
   pull_request:
-    branches: [develop]
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust:
     name: Rust tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install system libs
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Install Rust
         run: rustup install stable
+      - uses: Swatinem/rust-cache@v2
       - name: Build engine binary
         run: cargo build -p pedal-engine --bin pedal-engine
       - name: Run tests
@@ -28,6 +34,7 @@ jobs:
   ui:
     name: UI build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -40,19 +47,3 @@ jobs:
         run: cd ui && pnpm install --frozen-lockfile
       - name: Build
         run: cd ui && pnpm run build
-
-  auto-merge:
-    name: Auto-merge when CI passes
-    needs: [rust, ui]
-    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Squash merge
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch

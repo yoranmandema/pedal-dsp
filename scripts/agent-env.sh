@@ -30,23 +30,23 @@ if [ -n "$_pedal_top" ]; then
       || echo "agent-env: pnpm install FAILED in ui/ — run it yourself to see why"
   fi
   case "$(git -C "$_pedal_top" branch --show-current)" in
-    wt/*)
-      if [ -z "$(git -C "$_pedal_top" status --porcelain)" ] && ! git -C "$_pedal_top" merge-base --is-ancestor main HEAD; then
-        if git -C "$_pedal_top" merge --no-edit -q main; then
-          echo "agent-env: merged the latest main into $(git -C "$_pedal_top" branch --show-current)"
+    main) ;;
+    "") echo "agent-env: WARNING — detached HEAD. Create your card branch: git switch -c card/\${HERMES_KANBAN_TASK:-<card id>}" ;;
+    *)
+      # Card branch: bring it up to date with GitHub's main (the only source of truth).
+      git -C "$_pedal_top" fetch -q origin main 2>/dev/null || echo "agent-env: could not fetch origin (offline?)"
+      if [ -z "$(git -C "$_pedal_top" status --porcelain)" ] && ! git -C "$_pedal_top" merge-base --is-ancestor origin/main HEAD; then
+        if git -C "$_pedal_top" merge --no-edit -q origin/main; then
+          echo "agent-env: merged the latest origin/main into $(git -C "$_pedal_top" branch --show-current)"
         else
-          # Never leave a card worktree half-merged: workers used to keep
-          # committing on top of unresolved conflicts, and later lands died
-          # silently behind them. Leave the branch at its last clean commit.
           git -C "$_pedal_top" merge --abort
-          echo "agent-env: merging main conflicts — this branch stays at its last clean commit, $(git -C "$_pedal_top" rev-list --count HEAD..main) commits behind main. Work normally; whoever lands the card must resolve the conflict (scripts/kanban-land.sh reruns the merge and stops with a clear message)."
+          echo "agent-env: merging origin/main CONFLICTS — resolve it yourself now: git merge origin/main, fix the files, run the checks, commit."
         fi
       fi ;;
+  esac
+  case "$(git -C "$_pedal_top" branch --show-current)" in
     main)
-      # A WARNING was proven insufficient (2026-11-18: three parallel workers
-      # left uncommitted card work in the user's checkout overnight, stalling
-      # every land). If we know which card this session belongs to, move the
-      # session into its worktree instead of asking politely.
+      # Never work in the user's checkout. Move a kanban session into its worktree.
       if [ -n "${HERMES_KANBAN_TASK:-}" ] && [ -d "$_pedal_top/.worktrees/$HERMES_KANBAN_TASK" ]; then
         cd "$_pedal_top/.worktrees/$HERMES_KANBAN_TASK" \
           && echo "agent-env: MOVED you out of the main checkout into .worktrees/$HERMES_KANBAN_TASK — all card work belongs in worktrees; do everything from here."
