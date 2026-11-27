@@ -4,13 +4,16 @@
 import { effect, signal } from "@preact/signals";
 import { createBridge, type Bridge } from "./bridge";
 import { type BlockPayload } from "./dnd";
-import { type Config } from "./protocol";
+import type { Config } from "./protocol";
 import {
   asState,
+  isGainStaging,
   isLooper,
   isMeters,
   isState,
   isTuner,
+  type GainStagingLevelEvent,
+  type GainStagingState,
   type Meters,
   type Routing,
   type RoutingEndpoint,
@@ -57,6 +60,10 @@ export const tuner = signal<Tuner>({
 });
 /** Whether the tuner modal is open. */
 export const tunerOpen = signal(false);
+/** Whether the gain-staging modal is open. */
+export const gainStagingOpen = signal(false);
+/** Live gain-staging snapshot from the engine. */
+export const gainStaging = signal<GainStagingState>({});
 /**
  * The block type selected in the browser (rack or picker), for the keyboard
  * path: Enter/Space on a row selects it here, then the channel view's
@@ -117,6 +124,34 @@ export async function init(): Promise<void> {
     else if (isMeters(msg)) meters.value = msg.payload;
     else if (isTuner(msg)) tuner.value = msg.payload;
     else if (isLooper(msg)) looperFrac.value = msg.payload.frac;
+    else if (isGainStaging(msg)) {
+      const ev = msg as GainStagingLevelEvent;
+      if (ev.event === "gain_staging_level") {
+        gainStaging.value = {
+          ...gainStaging.value,
+          currentDb: ev.payload.level,
+          peakDb: ev.payload.peak_level,
+          active: ev.payload.active,
+        };
+      } else if (ev.event === "measure_complete") {
+        gainStaging.value = {
+          ...gainStaging.value,
+          profileName: ev.payload.profile_name,
+          recommendedGain: ev.payload.recommended_input,
+          measuredAvg: ev.payload.recommended_input,
+          measuredPeak: ev.payload.recommended_output,
+          sdr: ev.payload.sdr,
+          active: false,
+          progress: 100,
+        };
+      } else if (ev.event === "gain_staging_profiles") {
+        // Don't overwrite live snapshot fields; just store the names list.
+        const prev = gainStaging.value;
+        if (prev) {
+          gainStaging.value = { ...prev, profileNames: ev.payload.profiles };
+        }
+      }
+    }
   });
   try {
     fold(asState(await bridge.request("getState")));
@@ -655,6 +690,16 @@ export function openModelsPicker(channel: string): void {
   void requestModels();
   void seedIndexMeta();
   startModelsWatch();
+}
+
+/** Close the gain-staging modal. */
+export function closeGainStaging(): void {
+  gainStagingOpen.value = false;
+}
+
+/** Open the gain-staging modal. */
+export function openGainStaging(): void {
+  gainStagingOpen.value = true;
 }
 
 /** Close the model browser. */

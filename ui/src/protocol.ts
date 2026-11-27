@@ -65,6 +65,33 @@ export interface Routing {
   gain: number;
 }
 
+/** Live gain-staging state, updated on `gain_staging_level` and
+ * `measure_complete` events. UI-only — the engine snapshot never includes it. */
+export interface GainStagingState {
+  /** Selected instrument type (from GainStagingModal). */
+  instrument?: string;
+  /** Current input level in dBFS (-60 = silent). */
+  currentDb?: number;
+  /** Peak level tracked during the current measurement. */
+  peakDb?: number;
+  /** Gain recommended by the last measurement, in dB. */
+  recommendedGain?: number;
+  /** Average measured level from the last measurement, in dBFS. */
+  measuredAvg?: number;
+  /** Peak measured level from the last measurement, in dBFS. */
+  measuredPeak?: number;
+  /** Dynamic range of the last measurement. */
+  sdr?: number;
+  /** Profile name used for the last measurement, if any. */
+  profileName?: string;
+  /** Profile names from the last `gain_staging_profiles` event. UI-only. */
+  profileNames?: string[];
+  /** Whether a level stream is active. */
+  active?: boolean;
+  /** Progress of the measurement in percent (0–100). */
+  progress?: number;
+}
+
 export interface State {
   /** Monotonic revision. Bumped by the engine on every rebuild; the UI drops
    *  snapshots that are not newer, so a late delivery cannot roll it back. */
@@ -91,6 +118,10 @@ export interface State {
    * Overdubbing 3 / Stopped 4). Sent on every state event; the UI reads it
    * for the banner and the trigger buttons. */
   looper_state?: number;
+  /** Whether the gain-staging modal is open. UI-only. */
+  gainStagingOpen?: boolean;
+  /** Live gain-staging snapshot from the engine. UI-only. */
+  gainStaging?: GainStagingState;
 }
 
 /** Engine's config endpoint response: the I/O buffer-size config and latency. */
@@ -164,7 +195,65 @@ export interface ErrorEvent {
   payload: { message: string };
 }
 
-export type ServerMessage = Response | StateEvent | MetersEvent | LooperEvent | TunerEvent | ErrorEvent;
+// --- Gain Staging ----------------------------------------------------------
+
+export type GainStagingAction =
+  | "start_measure"
+  | "stop_measure"
+  | "save_profile"
+  | "load_profile"
+  | "delete_profile"
+  | "list_profiles"
+  | "apply";
+
+export interface GainStagingRequest extends Request {
+  type: "req";
+  id: number;
+  cmd: "gain_staging";
+  args: { action: GainStagingAction } & GainStagingArgs;
+}
+
+type GainStagingArgs =
+  | { action: "start_measure" }
+  | { action: "stop_measure" }
+  | { action: "save_profile"; name: string }
+  | { action: "load_profile"; name: string }
+  | { action: "delete_profile"; name: string }
+  | { action: "list_profiles" }
+  | { action: "apply"; profile_name: string; input_trim: number; output_trim: number };
+
+export type GainStagingLevelEvent =
+  | {
+      type: "event";
+      event: "gain_staging_level";
+      payload: { level: number; peak_level: number; active: boolean };
+    }
+  | {
+      type: "event";
+      event: "measure_complete";
+      payload: { profile_name: string; recommended_input: number; recommended_output: number; sdr: number };
+    }
+  | {
+      type: "event";
+      event: "gain_staging_profiles";
+      payload: { profiles: string[] };
+    };
+
+export function isGainStaging(msg: ServerMessage): msg is GainStagingLevelEvent | TunerEvent {
+  return (
+    msg.type === "event" &&
+    (msg.event === "gain_staging_level" || msg.event === "measure_complete" || msg.event === "gain_staging_profiles")
+  );
+}
+
+export type ServerMessage =
+  | Response
+  | StateEvent
+  | MetersEvent
+  | LooperEvent
+  | TunerEvent
+  | GainStagingLevelEvent
+  | ErrorEvent;
 
 export function isState(msg: ServerMessage): msg is StateEvent {
   return msg.type === "event" && msg.event === "state";
