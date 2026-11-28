@@ -895,7 +895,7 @@ async fn meters_loop(sh: Arc<Shared>) {
         let smart_gate_reduction = read_f32(&m.reduction_db);
         let text = json!({
             "type":"event","event":"meters",
-            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns,"bands":bands,"smart_gate_reduction":smart_gate_reduction}
+            "payload":{"in":0.0,"out":out,"cpu":cpu,"xruns":xruns,"bands":bands,"gateReduction":smart_gate_reduction}
         })
         .to_string();
         broadcast(&sh, text, None);

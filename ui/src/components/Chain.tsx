@@ -658,14 +658,14 @@ function PopulatedChannel({ channel, chainRefEl }: { channel: import("../protoco
                 )}
                 {b.type === "dynamics.smart_noise_gate" && (() => {
                   const gr = meters.value.gateReduction ?? 0;
-                  const pct = Math.min(100, gr * 100);
+                  const pct = Math.min(100, gr / 60 * 100);
                   return (
                     <span
                       class="gate-chip absolute bottom-0 left-1/2 -translate-x-1/2 h-[2px] w-[40px] rounded-sm pointer-events-none"
                       style={{
                         background: `linear-gradient(to right, #22c55e ${pct}%, #ef4444 ${pct}%)`,
                       }}
-                      title={`Gate reduction: ${gr > 0 ? Math.round(gr) : 0}%`}
+                      title={`Gate reduction: ${Math.round(gr)} dB`}
                     />
                   );
                 })()}
