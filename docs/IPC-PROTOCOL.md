@@ -291,15 +291,15 @@ Args: `{ channel, block, toChannel, col }`. Errors include `no such channel`,
 
 ### Later-slot rule
 
-When the UI drags a block from one strip to another, multiple columns may be
-available at the drop location. The engine picks the **highest free column**
-(highest `col` value < 8), not the lowest. This keeps existing blocks on the
-left and places the incoming block at the right edge.
+A routing (split) must always point to a block in a **later** column.
+`createRouting` returns `ok: false` with `"a split must go to a later slot"`
+when `dest.col <= source.col`. This is checked in addition to the existing
+self-reference, same-channel, duplicate, and cycle checks.
 
 ### Prune-on-move
 
-Dragging a block to a column that is already occupied by another block **prunes**
-that block from its original channel (the same as `removeBlock`). The pruned
-block then lands in the target channel at the given column. If the drag target
-column is empty, it simply occupies it. If the target column is the same as the
-source block's current column (no-op), the request is accepted silently.
+When `moveBlock` or `placeBlock` changes a block's column, every routing whose
+source or dest block now has `dest.col <= source.col` is **pruned** (removed).
+Similarly, if a block is moved so that both ends of a routing land in the same
+channel, that routing is pruned. The prune happens silently — the command
+returns the updated full state without an error.
