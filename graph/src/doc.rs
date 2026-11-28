@@ -69,6 +69,10 @@ pub struct NodeDoc {
     /// `dist.waveshaper` blocks. Absent → the block's identity curve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub curve: Option<serde_json::Value>,
+    /// Column slot (0–7) within the channel row on the grid.
+    /// `None` → legacy preset without grid columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub col: Option<u8>,
 }
 
 /// A block in a channel: one end of a cross-channel routing.
@@ -273,6 +277,7 @@ impl Doc {
             bypass: false,
             pos: Some(pos),
             model: None, curve: None,
+            col: None,
         });
         id
     }

@@ -41,6 +41,9 @@ pub const ROUTING_MIX_PREFIX: &str = "__routing_";
 /// Node id prefix for a routing's gain stage.
 pub const ROUTING_GAIN_PREFIX: &str = "__routing_gain_";
 
+/// Number of grid columns available per channel.
+pub const GRID_COLS: u8 = 8;
+
 #[derive(Clone, Debug)]
 pub struct Channel {
     pub id: String,
@@ -59,6 +62,46 @@ pub struct Channel {
 impl Channel {
     pub fn new(id: &str, name: &str) -> Self {
         Self { id: id.into(), name: name.into(), blocks: Vec::new(), sources: vec![IN.into()], master_volume: 0.0, master_ceiling: -1.0 }
+    }
+
+    /// Ensure every block has a column, all columns are unique and `< GRID_COLS`,
+    /// and blocks are sorted by column. Blocks without a col (legacy preset) get
+    /// the lowest free column in their current order.
+    pub fn normalize_cols(&mut self) -> Result<(), String> {
+        if self.blocks.len() > GRID_COLS as usize {
+            return Err(format!("channel {} has more than 8 blocks", self.id));
+        }
+        // Collect existing (col, index) pairs, sort by col to find gaps.
+        let mut cols: Vec<Option<u8>> = Vec::new();
+        for b in &self.blocks {
+            cols.push(b.col);
+        }
+        // Assign missing cols.
+        let mut used = std::collections::HashSet::new();
+        for c in &cols {
+            if let Some(c) = c {
+                used.insert(*c);
+            }
+        }
+        for b in &mut self.blocks {
+            if b.col.is_none() {
+                let mut found = false;
+                for c in 0..GRID_COLS {
+                    if !used.contains(&c) {
+                        b.col = Some(c);
+                        used.insert(c);
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(format!("channel {} has more than 8 blocks", self.id));
+                }
+            }
+        }
+        // Sort blocks by column.
+        self.blocks.sort_by_key(|b| b.col.unwrap_or(0));
+        Ok(())
     }
 }
 
@@ -92,6 +135,32 @@ pub fn master_id(ch: &str) -> String {
 /// to tell the output node apart from a channel master, which is also a
 /// `util.master`.
 pub const OUT_MASTER_ID: &str = "out__master";
+
+/// Would adding `source` → `dest` close a feedback loop?
+///
+/// The block-level signal graph is the channel chains, the channel-source
+/// feeds, and the enabled routings. A cycle exists when `dest` can already
+/// reach `source` through it.
+fn routing_creates_cycle(rig: &Rig, source: &RoutingEndpoint, dest: &RoutingEndpoint) -> bool {
+    let edges = rig.signal_edges(Some((&source.block, &dest.block)));
+    reaches(&edges, &dest.block, &source.block)
+}
+
+/// Depth-first reachability over block-level signal edges. Used to refuse a
+/// routing that would close a feedback loop.
+fn reaches(edges: &[(String, String)], from: &str, to: &str) -> bool {
+    let mut stack = vec![from.to_string()];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(n) = stack.pop() {
+        if n == to {
+            return true;
+        }
+        if seen.insert(n.clone()) {
+            stack.extend(edges.iter().filter(|(s, _)| *s == n).map(|(_, d)| d.clone()));
+        }
+    }
+    false
+}
 
 impl Rig {
     /// A rig with the full [`CHANNEL_COUNT`] channel slots, all empty.
@@ -134,24 +203,95 @@ impl Rig {
     /// Add a block to a channel's strip. Returns its id.
     pub fn add_block(&mut self, channel: &str, block: &str, pos: [f32; 2]) -> String {
         let stem = block.rsplit('.').next().unwrap_or(block).to_string();
-        self.add_block_as(channel, block, &stem, pos)
+        self.add_block_as(channel, block, &stem, pos, None).unwrap_or_else(|e| e)
     }
 
     /// As [`Rig::add_block`], but the node is named after the block's display
     /// name rather than the block type's last segment. Picking "Amp" from the
     /// palette should not produce a node called "basic".
-    pub fn add_block_as(&mut self, channel: &str, block: &str, name: &str, pos: [f32; 2]) -> String {
+    pub fn add_block_as(
+        &mut self,
+        channel: &str,
+        block: &str,
+        name: &str,
+        pos: [f32; 2],
+        col: Option<u8>,
+    ) -> Result<String, String> {
         let stem = name.trim().to_lowercase();
-        let stem = if stem.is_empty() { block.rsplit('.').next().unwrap_or(block).to_string() } else { stem };
+        let stem = if stem.is_empty() {
+            block.rsplit('.').next().unwrap_or(block).to_string()
+        } else {
+            stem
+        };
         let mut id = stem.clone();
         let mut k = 2;
         while self.id_taken(&id) {
             id = format!("{stem}{k}");
             k += 1;
         }
-        let n = NodeDoc { id: id.clone(), block: block.into(), params: BTreeMap::new(), bypass: false, pos: Some(pos), model: None, curve: None, };
-        self.channel_mut(channel).expect("channel").blocks.push(n);
-        id
+        // Determine and validate column.
+        let ch = self.channel_mut(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
+        let col = match col {
+            Some(c) => {
+                if c >= GRID_COLS {
+                    return Err("slot out of range".to_string());
+                }
+                if ch.blocks.iter().any(|b| b.col == Some(c)) {
+                    return Err("slot occupied".to_string());
+                }
+                c
+            }
+            None => {
+                // If the channel is empty, start at col 0. Otherwise assign
+                // max_col + 1 if that fits, else the lowest free slot.
+                let max_col = ch.blocks.iter().filter_map(|b| b.col).max().unwrap_or(0);
+                let col = if ch.blocks.is_empty() {
+                    0
+                } else if max_col + 1 < GRID_COLS {
+                    max_col + 1
+                } else {
+                    let mut used = ch.blocks.iter().filter_map(|b| b.col).collect::<std::collections::HashSet<_>>();
+                    let mut found = None;
+                    for c in 0..GRID_COLS {
+                        if !used.contains(&c) {
+                            found = Some(c);
+                            break;
+                        }
+                    }
+                    found.unwrap_or(GRID_COLS)
+                };
+                if col >= GRID_COLS {
+                    return Err("channel full (8 blocks)".to_string());
+                }
+                col
+            }
+        };
+        let n = NodeDoc {
+            id: id.clone(),
+            block: block.into(),
+            params: BTreeMap::new(),
+            bypass: false,
+            pos: Some(pos),
+            model: None,
+            curve: None,
+            col: Some(col),
+        };
+        ch.blocks.push(n);
+        ch.blocks.sort_by_key(|b| b.col.unwrap_or(0));
+        Ok(id)
+    }
+
+    fn make_node(id: &str, block: &str, pos: [f32; 2]) -> Result<NodeDoc, String> {
+        Ok(NodeDoc {
+            id: id.to_string(),
+            block: block.into(),
+            params: BTreeMap::new(),
+            bypass: false,
+            pos: Some(pos),
+            model: None,
+            curve: None,
+            col: None,
+        })
     }
 
     /// Remove a block from a channel's strip.
@@ -172,12 +312,34 @@ impl Rig {
     }
 
     /// Move a block within its strip. `to` is the target index.
+    ///
+    /// Reorders the block as today, then hands the channel's existing column
+    /// values back out in ascending order (preserving gaps). Then prunes
+    /// any routing that would violate the later-column rule.
     pub fn move_block(&mut self, channel: &str, id: &str, to: usize) {
         if let Some(c) = self.channel_mut(channel) {
             if let Some(from) = c.blocks.iter().position(|b| b.id == id) {
                 let b = c.blocks.remove(from);
                 let to = to.min(c.blocks.len());
                 c.blocks.insert(to, b);
+            }
+        }
+        self.reorder_cols_for_channel(channel);
+        self.prune_invalid_routings(channel);
+    }
+
+    /// Reorder the columns of one channel's blocks back to ascending order,
+    /// preserving any gaps.
+    fn reorder_cols_for_channel(&mut self, channel: &str) {
+        if let Some(ch) = self.channel_mut(channel) {
+            let cols: std::collections::BTreeSet<u8> =
+                ch.blocks.iter().filter_map(|b| b.col).collect();
+            let mut sorted: Vec<u8> = cols.into_iter().collect();
+            sorted.sort();
+            let mut col_idx = 0;
+            for b in &mut ch.blocks {
+                b.col = Some(sorted[col_idx]);
+                col_idx += 1;
             }
         }
     }
@@ -218,7 +380,7 @@ impl Rig {
     /// saved project) but takes its feed out of the signal path.
     pub fn set_enabled(&mut self, id: &str, enabled: bool) -> Result<(), String> {
         let r = self.routing(id).ok_or_else(|| format!("no such routing: {id}"))?;
-        if enabled && !r.enabled && self.routing_creates_cycle(&r.source, &r.dest) {
+        if enabled && !r.enabled && routing_creates_cycle(self, &r.source, &r.dest) {
             return Err("enabling that routing would create a feedback cycle".to_string());
         }
         self.routing_mut(id).expect("checked above").enabled = enabled;
@@ -275,8 +437,22 @@ impl Rig {
         if self.routings.iter().any(|r| &r.source == source && &r.dest == dest) {
             return Err("that routing already exists".to_string());
         }
-        if self.routing_creates_cycle(source, dest) {
+        if routing_creates_cycle(self, source, dest) {
             return Err("that routing would create a feedback cycle".to_string());
+        }
+        // Split rule: dest col must be strictly later than source col.
+        let source_col = self
+            .channel(&source.channel)
+            .and_then(|c| c.blocks.iter().find(|b| b.id == source.block))
+            .and_then(|b| b.col);
+        let dest_col = self
+            .channel(&dest.channel)
+            .and_then(|c| c.blocks.iter().find(|b| b.id == dest.block))
+            .and_then(|b| b.col);
+        if let (Some(s), Some(d)) = (source_col, dest_col) {
+            if d <= s {
+                return Err("a split must go to a later slot".to_string());
+            }
         }
         Ok(())
     }
@@ -289,20 +465,6 @@ impl Rig {
             return Err(format!("{role}: no such block: {}", e.block));
         }
         Ok(())
-    }
-
-    /// Would adding `source` → `dest` close a feedback loop?
-    ///
-    /// The block-level signal graph is the channel chains, the channel-source
-    /// feeds, and the enabled routings. A cycle exists when `dest` can already
-    /// reach `source` through it.
-    pub fn routing_creates_cycle(
-        &self,
-        source: &RoutingEndpoint,
-        dest: &RoutingEndpoint,
-    ) -> bool {
-        let edges = self.signal_edges(Some((&source.block, &dest.block)));
-        reaches(&edges, &dest.block, &source.block)
     }
 
     /// Block-level signal edges: each channel's chain, the feeds a channel's
@@ -448,6 +610,132 @@ impl Rig {
         Ok(())
     }
 
+    /// Move a block to a different channel at a given column.
+    ///
+    /// Returns `Err` if the channel/block don't exist, the target cell is
+    /// occupied, or the channel doesn't exist. On success the block is moved
+    /// (id, params, bypass, model unchanged), its routing endpoints are
+    /// rewritten, and stale routings are pruned.
+    pub fn place_block(
+        &mut self,
+        channel: &str,
+        block: &str,
+        to_channel: &str,
+        col: u8,
+    ) -> Result<(), String> {
+        if col >= GRID_COLS {
+            return Err("slot out of range".to_string());
+        }
+        // Validate source block exists.
+        let src_ch = self
+            .channel(channel)
+            .ok_or_else(|| format!("no such channel: {channel}"))?;
+        let src_block = src_ch
+            .blocks
+            .iter()
+            .find(|b| b.id == block)
+            .ok_or_else(|| format!("no such block: {block}"))?;
+        // Validate target channel exists.
+        let _tgt_ch = self
+            .channel(to_channel)
+            .ok_or_else(|| format!("no such channel: {to_channel}"))?;
+        // No-op if same channel and same col (before checking occupied).
+        if channel == to_channel && src_block.col == Some(col) {
+            return Ok(());
+        }
+        // Check target cell is free.
+        if let Some(tgt_ch) = self.channel(to_channel) {
+            if tgt_ch.blocks.iter().any(|b| b.col == Some(col)) {
+                return Err("slot occupied".to_string());
+            }
+        }
+        // Clone src_block data before mutating channels.
+        let src_data = src_block.clone();
+        // Remove from source channel.
+        if let Some(ch) = self.channel_mut(channel) {
+            ch.blocks.retain(|b| b.id != block);
+        }
+        // Add to target channel at the given col.
+        let mut new_block = src_data;
+        new_block.col = Some(col);
+        if let Some(ch) = self.channel_mut(to_channel) {
+            ch.blocks.push(new_block);
+            ch.blocks.sort_by_key(|b| b.col.unwrap_or(0));
+        }
+        // Rewrite routing endpoints.
+        self.update_routing_endpoints(block, channel, to_channel);
+        // Prune invalid routings.
+        self.prune_invalid_routings(to_channel);
+        Ok(())
+    }
+
+    /// Rewrite the channel field of every routing endpoint that names `block`.
+    fn update_routing_endpoints(&mut self, block: &str, old_channel: &str, new_channel: &str) {
+        for r in &mut self.routings {
+            if r.source.block == block {
+                r.source.channel = new_channel.to_string();
+            }
+            if r.dest.block == block {
+                r.dest.channel = new_channel.to_string();
+            }
+        }
+    }
+
+    /// Prune routings that are now invalid (same-channel, self, same-col split, or cycles).
+    fn prune_invalid_routings(&mut self, changed_channel: &str) {
+        let old_len = self.routings.len();
+        // Collect block-col pairs before mutable borrow of routings.
+        let mut col_lookup: std::collections::HashMap<String, u8> =
+            std::collections::HashMap::new();
+        for ch in &self.channels {
+            for b in &ch.blocks {
+                if let Some(c) = b.col {
+                    col_lookup.insert(b.id.clone(), c);
+                }
+            }
+        }
+        // Phase 1: cheap checks without borrowing self (retains the vector).
+        self.routings.retain(|r| {
+            // Same channel check.
+            if r.source.channel == r.dest.channel {
+                return false;
+            }
+            // Self check.
+            if r.source.block == r.dest.block {
+                return false;
+            }
+            // Split rule: dest col must be > source col.
+            let (Some(s), Some(d)) = (
+                col_lookup.get(&r.source.block).copied(),
+                col_lookup.get(&r.dest.block).copied(),
+            ) else {
+                return true;
+            };
+            if d <= s {
+                return false;
+            }
+            true
+        });
+        // Phase 2: cycle check — build a shallow copy of routings to pass to the checker.
+        let shallow: Vec<(RoutingEndpoint, RoutingEndpoint)> =
+            self.routings.iter().map(|r| (r.source.clone(), r.dest.clone())).collect();
+        let mut to_remove = Vec::new();
+        for (i, (src, dst)) in shallow.into_iter().enumerate() {
+            if routing_creates_cycle(self, &src, &dst) {
+                to_remove.push(i);
+            }
+        }
+        for idx in to_remove.into_iter().rev() {
+            self.routings.remove(idx);
+        }
+        // Keep the remaining routings in their original order.
+        let new_len = self.routings.len();
+        if new_len != old_len {
+            // Reorder columns of the affected channels.
+            self.reorder_cols_for_channel(changed_channel);
+        }
+    }
+
     // --- graph conversion -------------------------------------------------
 
     pub fn split_id(ch: &str) -> String {
@@ -459,9 +747,18 @@ impl Rig {
         NodeDoc {
             id: OUT_MASTER_ID.into(),
             block: "util.master".into(),
-            params: [("volume".to_string(), self.master_volume), ("ceiling".to_string(), -1.0)].into_iter().collect(),
+            params: [
+                ("volume".to_string(), self.master_volume),
+                ("ceiling".to_string(), -1.0),
+            ]
+            .into_iter()
+            .collect(),
             bypass: false,
-            pos: Some([1320.0, 400.0]), model: None, curve: None, }
+            pos: Some([1320.0, 400.0]),
+            model: None,
+            curve: None,
+            col: None,
+        }
     }
 
     /// Lay the rig out as a graph the executor can compile.
@@ -474,26 +771,58 @@ impl Rig {
         doc.nodes.push(NodeDoc {
             id: "in".into(),
             block: "io.input".into(),
-            params: [("gain".to_string(), self.input_gain)].into_iter().collect(),
+            params: [("gain".to_string(), self.input_gain)]
+                .into_iter()
+                .collect(),
             bypass: false,
             pos: Some([60.0, 400.0]),
-            model: None, curve: None,
+            model: None,
+            curve: None,
+            col: None,
         });
-        doc.nodes.push(NodeDoc { id: "out".into(), block: "io.output".into(), params: BTreeMap::new(), bypass: false, pos: Some([1400.0, 400.0]), model: None, curve: None, });
+        doc.nodes.push(NodeDoc {
+            id: "out".into(),
+            block: "io.output".into(),
+            params: BTreeMap::new(),
+            bypass: false,
+            pos: Some([1400.0, 400.0]),
+            model: None,
+            curve: None,
+            col: None,
+        });
         // A pedalboard with nothing in it is a *bypass*, not a dead pedal.
         // The summer below needs a channel master to feed it, so without this
         // the sum's inputs would all be tied to silence and the pedal would
         // output nothing until a block was added.
-        let active: Vec<&Channel> = self.channels.iter().filter(|c| !c.blocks.is_empty()).collect();
+        let active: Vec<&Channel> = self
+            .channels
+            .iter()
+            .filter(|c| !c.blocks.is_empty())
+            .collect();
         if active.is_empty() {
             doc.nodes.push(self.out_master());
-            doc.edges.push(EdgeDoc { from: ["in".to_string(), "out".into()], to: ["out__master".to_string(), "in".into()] });
-            doc.edges.push(EdgeDoc { from: ["out__master".to_string(), "out".into()], to: ["out".to_string(), "in".into()] });
+            doc.edges.push(EdgeDoc {
+                from: ["in".to_string(), "out".into()],
+                to: ["out__master".to_string(), "in".into()],
+            });
+            doc.edges.push(EdgeDoc {
+                from: ["out__master".to_string(), "out".into()],
+                to: ["out".to_string(), "in".into()],
+            });
             return doc;
         }
         // One summing node so every channel master has exactly one wire into
         // the output node (which has a single input port).
-        let mut sum = NodeDoc { id: "sum".into(), block: "util.sum".into(), params: BTreeMap::new(), bypass: false, pos: Some([1250.0, 400.0]), model: None, curve: None, };
+        let mut sum = NodeDoc {
+            id: "sum".into(),
+            block: "util.sum".into(),
+            params: BTreeMap::new(),
+            bypass: false,
+            pos: Some([1250.0, 400.0]),
+            model: None,
+            curve: None,
+            col: None,
+        };
         sum.params.insert("a".into(), 1.0);
         sum.params.insert("b".into(), 1.0);
         sum.params.insert("c".into(), 1.0);
@@ -514,7 +843,11 @@ impl Rig {
                     block: "util.mix".into(),
                     params: BTreeMap::new(),
                     bypass: false,
-                    pos: Some([240.0, y]), model: None, curve: None, });
+                    pos: Some([240.0, y]),
+                    model: None,
+                    curve: None,
+                    col: None,
+                });
             }
             for (i, b) in c.blocks.iter().enumerate() {
                 let mut b = b.clone();
@@ -526,7 +859,11 @@ impl Rig {
                 block: "util.master".into(),
                 params: BTreeMap::new(),
                 bypass: false,
-                pos: Some([400.0 + c.blocks.len() as f32 * 175.0, y]), model: None, curve: None, };
+                pos: Some([400.0 + c.blocks.len() as f32 * 175.0, y]),
+                model: None,
+                curve: None,
+                col: None,
+            };
             master.params.insert("volume".into(), c.master_volume);
             master.params.insert("ceiling".into(), c.master_ceiling);
             doc.nodes.push(master);
@@ -535,7 +872,10 @@ impl Rig {
             let head = if multi {
                 Self::split_id(&c.id)
             } else {
-                c.blocks.first().map(|b| b.id.clone()).unwrap_or_else(|| master_id(&c.id))
+                c.blocks
+                    .first()
+                    .map(|b| b.id.clone())
+                    .unwrap_or_else(|| master_id(&c.id))
             };
             // Routing edges into the head. (A channel's master is wired to
             // the pedal output by the channel-end edge below.)
@@ -546,11 +886,18 @@ impl Rig {
                     (master_id(src), "out".to_string())
                 };
                 let to_port = if multi {
-                    if k == 0 { "in_a" } else { "in_b" }
+                    if k == 0 {
+                        "in_a"
+                    } else {
+                        "in_b"
+                    }
                 } else {
                     "in"
                 };
-                doc.edges.push(EdgeDoc { from: [from_node, from_port], to: [head.clone(), to_port.into()] });
+                doc.edges.push(EdgeDoc {
+                    from: [from_node, from_port],
+                    to: [head.clone(), to_port.into()],
+                });
             }
             // The chain itself. With a split, the split feeds the first
             // block; without one, the first block *is* the head and the
@@ -558,24 +905,39 @@ impl Rig {
             if multi {
                 let mut prev = head.clone();
                 for b in &c.blocks {
-                    doc.edges.push(EdgeDoc { from: [prev.clone(), "out".into()], to: [b.id.clone(), "in".into()] });
+                    doc.edges.push(EdgeDoc {
+                        from: [prev.clone(), "out".into()],
+                        to: [b.id.clone(), "in".into()],
+                    });
                     prev = b.id.clone();
                 }
             } else {
                 for w in c.blocks.windows(2) {
-                    doc.edges.push(EdgeDoc { from: [w[0].id.clone(), "out".into()], to: [w[1].id.clone(), "in".into()] });
+                    doc.edges.push(EdgeDoc {
+                        from: [w[0].id.clone(), "out".into()],
+                        to: [w[1].id.clone(), "in".into()],
+                    });
                 }
             }
             let last = if multi {
                 head.clone()
             } else {
-                c.blocks.last().map(|b| b.id.clone()).unwrap_or_else(|| head.clone())
+                c.blocks
+                    .last()
+                    .map(|b| b.id.clone())
+                    .unwrap_or_else(|| head.clone())
             };
             // The last block feeds the channel master. (A channel always has
             // at least one block here, so `last` is never the master.)
-            doc.edges.push(EdgeDoc { from: [last, "out".into()], to: [master_id(&c.id), "in".into()] });
+            doc.edges.push(EdgeDoc {
+                from: [last, "out".into()],
+                to: [master_id(&c.id), "in".into()],
+            });
             let port = ["a", "b", "c", "d"][ci.min(3)];
-            doc.edges.push(EdgeDoc { from: [master_id(&c.id), "out".into()], to: ["sum".to_string(), port.into()] });
+            doc.edges.push(EdgeDoc {
+                from: [master_id(&c.id), "out".into()],
+                to: ["sum".to_string(), port.into()],
+            });
         }
         // Unused sum inputs are tied to silence via a zero-gain gain node, so
         // the graph's "every input driven" rule holds without a special case.
@@ -586,15 +948,31 @@ impl Rig {
                 block: "util.gain".into(),
                 params: [("gain".to_string(), -60.0)].into_iter().collect(),
                 bypass: false,
-                pos: Some([1150.0, 200.0 + k as f32 * 60.0]), model: None, curve: None, });
-            doc.edges.push(EdgeDoc { from: ["in".to_string(), "out".into()], to: [id.clone(), "in".into()] });
-            doc.edges.push(EdgeDoc { from: [id, "out".into()], to: ["sum".to_string(), port.to_string()] });
+                pos: Some([1150.0, 200.0 + k as f32 * 60.0]),
+                model: None,
+                curve: None,
+                col: None,
+            });
+            doc.edges.push(EdgeDoc {
+                from: ["in".to_string(), "out".into()],
+                to: [id.clone(), "in".into()],
+            });
+            doc.edges.push(EdgeDoc {
+                from: [id, "out".into()],
+                to: ["sum".to_string(), port.to_string()],
+            });
         }
         // One limiter on the summed output: each channel has its own master,
         // but their sum can still exceed full scale.
         doc.nodes.push(self.out_master());
-        doc.edges.push(EdgeDoc { from: ["sum".to_string(), "out".into()], to: ["out__master".to_string(), "in".into()] });
-        doc.edges.push(EdgeDoc { from: ["out__master".to_string(), "out".into()], to: ["out".to_string(), "in".into()] });
+        doc.edges.push(EdgeDoc {
+            from: ["sum".to_string(), "out".into()],
+            to: ["out__master".to_string(), "in".into()],
+        });
+        doc.edges.push(EdgeDoc {
+            from: ["out__master".to_string(), "out".into()],
+            to: ["out".to_string(), "in".into()],
+        });
         doc
     }
 
@@ -641,7 +1019,11 @@ impl Rig {
             let mut cur = master.clone();
             let mut sources: Vec<String> = Vec::new();
             loop {
-                let incoming: Vec<&EdgeDoc> = doc.edges.iter().filter(|e| e.to[0] == cur && e.to[1] == "in").collect();
+                let incoming: Vec<&EdgeDoc> = doc
+                    .edges
+                    .iter()
+                    .filter(|e| e.to[0] == cur && e.to[1] == "in")
+                    .collect();
                 if incoming.is_empty() {
                     break;
                 }
@@ -653,7 +1035,10 @@ impl Rig {
                             blocks.push(n.clone());
                         }
                     }
-                    sources = incoming.iter().map(|e| src_name(&e.from[0])).collect();
+                    sources = incoming
+                        .iter()
+                        .map(|e| src_name(&e.from[0]))
+                        .collect();
                     break;
                 }
                 // `cur` is part of this channel's chain (it isn't the
@@ -675,19 +1060,40 @@ impl Rig {
             }
             let (master_volume, master_ceiling) = doc
                 .node(master)
-                .map(|n| (n.params.get("volume").copied().unwrap_or(0.0), n.params.get("ceiling").copied().unwrap_or(-1.0)))
+                .map(|n| {
+                    (
+                        n.params.get("volume").copied().unwrap_or(0.0),
+                        n.params.get("ceiling").copied().unwrap_or(-1.0),
+                    )
+                })
                 .unwrap_or((0.0, -1.0));
             blocks.reverse();
             // The channel id is the master's prefix, so a source name in the
             // preset ("amp") matches the channel that owns "amp__master".
             let id = master.strip_suffix("__master").unwrap_or(master).to_string();
             let n = rig.channels.len() + 1;
-            rig.channels.push(Channel { id, name: format!("Channel {n}"), blocks, sources, master_volume, master_ceiling });
+            rig.channels
+                .push(Channel {
+                    id,
+                    name: format!("Channel {n}"),
+                    blocks,
+                    sources,
+                    master_volume,
+                    master_ceiling,
+                });
         }
         // A rig always shows the full set of channel slots. A preset with
         // fewer channels (every shipped one has one) gets empty slots rather
         // than a UI that grows and shrinks.
         rig.pad_channels();
+        // Normalize columns on every block in every loaded channel.
+        for ch in &mut rig.channels {
+            if let Err(e) = ch.normalize_cols() {
+                eprintln!("pedal: loading preset for rig '{}': {e}", rig.name);
+                // Continue anyway — a channel with too many blocks is still
+                // loadable without columns.
+            }
+        }
         // Routings are validated on load too: a hand-edited project must not be
         // able to smuggle in a self-route, a same-channel route, a duplicate,
         // or a cycle. Invalid entries are dropped rather than poisoning the rig.
@@ -709,11 +1115,16 @@ impl Rig {
             let n = self.channels.len() + 1;
             let mut id = format!("ch{n}");
             let mut k = 2;
-            while self.channels.iter().any(|c| c.id == id) {
+            while self
+                .channels
+                .iter()
+                .any(|c| c.id == id)
+            {
                 id = format!("ch{n}_{k}");
                 k += 1;
             }
-            self.channels.push(Channel::new(&id, &format!("Channel {n}")));
+            self.channels
+                .push(Channel::new(&id, &format!("Channel {n}")));
         }
     }
 
@@ -780,20 +1191,4 @@ fn src_name(node: &str) -> String {
     } else {
         node.into()
     }
-}
-
-/// Depth-first reachability over block-level signal edges. Used to refuse a
-/// routing that would close a feedback loop.
-fn reaches(edges: &[(String, String)], from: &str, to: &str) -> bool {
-    let mut stack = vec![from.to_string()];
-    let mut seen = std::collections::HashSet::new();
-    while let Some(n) = stack.pop() {
-        if n == to {
-            return true;
-        }
-        if seen.insert(n.clone()) {
-            stack.extend(edges.iter().filter(|(s, _)| *s == n).map(|(_, d)| d.clone()));
-        }
-    }
-    false
 }

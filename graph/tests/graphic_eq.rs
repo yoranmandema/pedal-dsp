@@ -221,6 +221,7 @@ fn node_doc_params_round_trip_and_recompile_finite() {
         bypass: false,
         pos: None,
         model: None, curve: None,
+        col: None,
     };
     let doc = Doc {
         name: "roundtrip".into(),

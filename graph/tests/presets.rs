@@ -19,7 +19,7 @@ fn rig_doc(json: &str) -> Doc {
         block: "util.sum".into(),
         params: Default::default(),
         bypass: false,
-        pos: None, model: None, curve: None, };
+        pos: None, model: None, curve: None, col: None, };
     sum.params.insert("a".into(), 1.0);
     sum.params.insert("b".into(), 1.0);
     sum.params.insert("c".into(), 1.0);
@@ -45,7 +45,7 @@ fn rig_doc(json: &str) -> Doc {
             block: "util.gain".into(),
             params: [("gain".to_string(), -60.0)].into_iter().collect(),
             bypass: false,
-            pos: None, model: None, curve: None, });
+            pos: None, model: None, curve: None, col: None, });
         edges.push(dsp_graph::EdgeDoc { from: ["in".to_string(), "out".into()], to: [id.clone(), "in".into()] });
         edges.push(dsp_graph::EdgeDoc { from: [id, "out".into()], to: ["sum".to_string(), port.to_string()] });
     }

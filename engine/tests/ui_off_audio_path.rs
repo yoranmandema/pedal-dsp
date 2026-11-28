@@ -99,9 +99,9 @@ fn compile_rig(handle: &Handle, rig: &Rig) {
 /// A pedalboard with a recognisable knob on it.
 fn test_rig() -> Rig {
     let mut rig = Rig::new("US-2.10");
-    rig.add_block_as("ch1", "amp.basic", "Amp", [0.0, 0.0]);
-    rig.add_block_as("ch1", "cab.sim", "Cab", [0.0, 0.0]);
-    rig.add_block_as("ch1", "time.delay", "Delay", [0.0, 0.0]);
+    let _ = rig.add_block_as("ch1", "amp.basic", "Amp", [0.0, 0.0], None);
+    let _ = rig.add_block_as("ch1", "cab.sim", "Cab", [0.0, 0.0], None);
+    let _ = rig.add_block_as("ch1", "time.delay", "Delay", [0.0, 0.0], None);
     rig
 }
 
