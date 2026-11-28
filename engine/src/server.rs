@@ -176,6 +176,7 @@ fn snapshot(sh: &Shared) -> Value {
                 "id": c.id,
                 "name": c.name,
                 "volume": c.master_volume,
+                "muted": c.muted,
                 "sources": c.sources,
                 "blocks": blocks,
             })
@@ -534,6 +535,15 @@ fn set_sources(sh: &Shared, channel: &str, sources: Vec<String>) -> Result<(), S
     rebuild(sh)
 }
 
+fn set_muted(sh: &Shared, channel: &str, muted: bool) -> Result<(), String> {
+    let mut rig = sh.rig.lock().unwrap();
+    rig.channel_mut(channel)
+        .ok_or_else(|| format!("no such channel: {channel}"))?;
+    rig.set_muted(channel, muted)
+        .map_err(|e| format!("set_mute: {e}"))?;
+    Ok(())
+}
+
 fn load_preset(sh: &Shared, name: &str) -> Result<(), String> {
     let doc = {
         let store = sh.store.lock().unwrap();
@@ -621,7 +631,7 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
         "getState" | "setParam" | "setMasterVolume" | "setBypass" | "addBlock"
         | "removeBlock" | "moveBlock" | "setSources" | "createRouting"
         | "removeRouting" | "setEnabled" | "setGain" | "setInputGain" | "setMasterOutVolume"
-        | "loadPreset" | "nextPreset" | "prevPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" => {
+        | "loadPreset" | "nextPreset" | "prevPreset" | "setSource" | "savePreset" | "deletePreset" | "renamePreset" | "setMute" => {
             match cmd {
                 "getState" => {},
                 "setParam" => {
@@ -698,16 +708,11 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
                     };
                     sh.source.store(v, Ordering::Relaxed);
                 }
-                "loadPreset" => {
-                    load_preset(sh, &s("name").ok_or("name")?)?;
+                "renamePreset" => {
+                    rename_preset(sh, &s("from").ok_or("from")?, &s("to").ok_or("to")?)?;
                 }
-                "setSource" => {
-                    let v = match s("source").as_deref() {
-                        Some("live") => 1u8,
-                        Some("silence") => 2u8,
-                        _ => 0u8,
-                    };
-                    sh.source.store(v, Ordering::Relaxed);
+                "setMute" => {
+                    set_muted(sh, &s("channel").ok_or("channel")?, b("muted"))?;
                 }
                 _ => unreachable!(),
             }

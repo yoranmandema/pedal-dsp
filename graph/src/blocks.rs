@@ -1225,6 +1225,7 @@ impl Block for Master {
             params: vec![
                 ParamSpec { id: "volume", name: "Volume", unit: Unit::Decibels, min: -60.0, max: 12.0, default: 0.0, curve: Curve::AmpGain },
                 ParamSpec { id: "ceiling", name: "Ceiling", unit: Unit::Decibels, min: -24.0, max: 0.0, default: -1.0, curve: Curve::AmpGain },
+                ParamSpec { id: "muted", name: "Muted", unit: Unit::Linear, min: 0.0, max: 1.0, default: 0.0, curve: Curve::Linear },
             ],
             controls_in: vec![],
             controls_out: vec![],
@@ -1234,6 +1235,14 @@ impl Block for Master {
         Ok(())
     }
     fn process(&mut self, ctx: &mut BlockCtx<'_>) -> Result<(), BlockError> {
+        if (ctx.param(2) as f32) >= 0.5 {
+            // Muted: pass through silence.
+            let out = &mut ctx.outputs[0][..];
+            for i in 0..ctx.n {
+                out[i] = 0.0;
+            }
+            return Ok(());
+        }
         let vol = pedal_dsp::util::db_to_lin(ctx.param(0));
         let ceil = pedal_dsp::util::db_to_lin(ctx.param(1));
         let input = ctx.inputs[0];

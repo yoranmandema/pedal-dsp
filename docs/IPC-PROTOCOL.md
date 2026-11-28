@@ -110,6 +110,7 @@ a much harder reconnection story. **Snapshot, not deltas.**
       "id": "ch1",
       "name": "Channel 1",
       "volume": 0.0,                 // dB, -60..12
+      "muted": false,                // whether this channel is muted
       "sources": ["in"],             // "in" | "ch1" | "ch2" | ...
       "blocks": [
         {
@@ -199,6 +200,7 @@ be changed from the client.
 | `savePreset` | `{name}` | save the current rig | full state |
 | `deletePreset` | `{name}` | delete a preset | full state |
 | `renamePreset` | `{from, to}` | rename a preset | full state |
+| `setMute` | `{channel, muted}` | mute/unmute a channel | full state |
 
 Errors return `{ "ok": false, "error": "..." }`. A failed mutation never
 changes state, so the client can keep its current snapshot.

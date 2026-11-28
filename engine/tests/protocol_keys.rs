@@ -69,7 +69,7 @@ const STATE_KEYS: &[&str] = &[
 const BLOCK_KEYS: &[&str] = &["id", "type", "name", "bypass", "params"];
 
 /// Exact keys of one channel entry.
-const CHANNEL_KEYS: &[&str] = &["id", "name", "volume", "sources", "blocks"];
+const CHANNEL_KEYS: &[&str] = &["id", "name", "volume", "sources", "blocks", "muted"];
 
 fn assert_exactly(actual: &Value, expected: &[&str], what: &str) {
     let obj = actual.as_object().unwrap_or_else(|| panic!("{what} is not an object"));
