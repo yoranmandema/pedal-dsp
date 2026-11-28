@@ -1,6 +1,7 @@
 import type { JSX } from "preact";
 import { Knob } from "./Knob";
 import { LooperEditor } from "./LooperEditor";
+import { SmartNoiseGateEditor } from "./SmartNoiseGateEditor";
 import { catStyle } from "../theme";
 import { selected, setBypass, setParam, setGraphicEqBand, state, addBlockFor } from "../state";
 import { useState } from "preact/hooks";
@@ -171,6 +172,22 @@ export function Editor() {
   const choices = params.filter((p) => p.kind === "choice");
 
   const [sweepGate, setSweepGate] = useState(0);
+
+  /** The Smart Noise Gate editor is self-contained (reads its own meters via
+   *  `useMultibandMetersSource`). Route to it before the generic body. */
+  if (block.type === "noise_gate.smart") {
+    return (
+      <footer
+        class="editor relative row-start-3 col-start-1 grid grid-cols-[minmax(0,var(--ui-id-w))_minmax(0,1fr)] items-center gap-3 border-t border-line bg-linear-to-b from-[#1a1b21] to-[#14151a] p-4 min-h-0 max-h-[62vh] portrait:max-h-[32vh] overflow-y-auto overscroll-contain desk:h-[var(--ui-bar)] desk:min-h-[var(--ui-bar)] desk:max-h-none desk:overflow-visible phone:grid-cols-1 phone:items-start"
+      >
+        <SmartNoiseGateEditor
+          channel={sel.channel}
+          block={block}
+          onChange={(param: string, v: number) => void setParam(sel.channel, sel.block, param, v)}
+        />
+      </footer>
+    );
+  }
 
   /** The footswitch and expression drive the block's sweep gate. The engine
    *  card (t_02019ec2's build step) exposes `sweep_gate` on the whammy block;

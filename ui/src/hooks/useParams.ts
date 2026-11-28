@@ -133,6 +133,8 @@ export interface MultibandMeters {
   cpu: number;
   xruns: number;
   bands: ReadonlyArray<MultibandMeter>;
+  /** Peak reduction from the smart noise gate (dB, 0 = no reduction). */
+  gateReduction?: number;
 }
 
 /** A source of multiband metering values. The UI never talks to the engine's
@@ -160,6 +162,7 @@ export class LocalMetersSource implements MultibandMeters, MultibandMetersSource
   cpu = 0;
   xruns = 0;
   bands: readonly MultibandMeter[] = [];
+  gateReduction?: number;
 
   /** Apply a fresh `event: meters` payload (e.g. injected by a test). */
   setMeters(m: MultibandMeters): void {
@@ -168,6 +171,9 @@ export class LocalMetersSource implements MultibandMeters, MultibandMetersSource
     this.cpu = m.cpu;
     this.xruns = m.xruns;
     this.bands = m.bands ?? [];
+    if (m.gateReduction !== undefined) {
+      this.gateReduction = m.gateReduction;
+    }
   }
 
   /** Reset to the fresh-rig state. */
@@ -177,6 +183,7 @@ export class LocalMetersSource implements MultibandMeters, MultibandMetersSource
     this.cpu = 0;
     this.xruns = 0;
     this.bands = [];
+    this.gateReduction = undefined;
   }
 }
 
@@ -211,15 +218,18 @@ export class EngineMetersSource implements MultibandMeters, MultibandMetersSourc
 
   /** Apply a fresh `event: meters` payload (the engine's extended `Meters`).
    *
-   *  The wire `Meters` is extended with per-band GR (`bands`) once the engine
-   *  card lands; until then this stays empty. `MultibandMeter` is the band
-   *  shape referenced by the design doc (§7). */
+   *  The wire `Meters` is extended with per-band GR (`bands`) and gate
+   *  reduction (`gateReduction`) once the engine card lands; until then this
+   *  stays empty / undefined. */
   setMeters(m: Meters & { bands?: ReadonlyArray<MultibandMeter> }): void {
     this.in = m.in;
     this.out = m.out;
     this.cpu = m.cpu;
     this.xruns = m.xruns;
     this.bands = m.bands ?? [];
+    if (m.gateReduction !== undefined) {
+      (this as unknown as { gateReduction: number }).gateReduction = m.gateReduction;
+    }
   }
 
   /** Reset to the fresh-rig state (and re-subscribe to the next engine
@@ -230,6 +240,7 @@ export class EngineMetersSource implements MultibandMeters, MultibandMetersSourc
     this.cpu = 0;
     this.xruns = 0;
     this.bands = [];
+    (this as unknown as { gateReduction: number | undefined }).gateReduction = undefined;
     this.unsubscribe?.();
     this.unsubscribe = this.bridge.subscribe((msg) => {
       if (isMeters(msg)) this.setMeters(msg.payload);
