@@ -54,11 +54,14 @@ pub struct Channel {
     pub master_volume: f32,
     /// The channel's limiter ceiling, dB.
     pub master_ceiling: f32,
+    /// When true the channel does not feed the master sum. Blocks remain
+    /// compiled so routings can still tap them.
+    pub muted: bool,
 }
 
 impl Channel {
     pub fn new(id: &str, name: &str) -> Self {
-        Self { id: id.into(), name: name.into(), blocks: Vec::new(), sources: vec![IN.into()], master_volume: 0.0, master_ceiling: -1.0 }
+        Self { id: id.into(), name: name.into(), blocks: Vec::new(), sources: vec![IN.into()], master_volume: 0.0, master_ceiling: -1.0, muted: false }
     }
 }
 
@@ -127,6 +130,13 @@ impl Rig {
         self.channels.iter_mut().find(|c| c.id == id)
     }
 
+    /// Mute or unmute a channel. Returns an error if the channel id is unknown.
+    /// Muting does not alter `volume` — it is independent of channel volume.
+    pub fn set_muted(&mut self, channel: &str, muted: bool) -> Result<(), String> {
+        let c = self.channel_mut(channel).ok_or_else(|| format!("no such channel: {channel}"))?;
+        c.muted = muted;
+        Ok(())
+    }
     pub fn id_taken(&self, id: &str) -> bool {
         self.channels.iter().any(|c| c.blocks.iter().any(|b| b.id == id))
     }
@@ -529,6 +539,7 @@ impl Rig {
                 pos: Some([400.0 + c.blocks.len() as f32 * 175.0, y]), model: None, curve: None, };
             master.params.insert("volume".into(), c.master_volume);
             master.params.insert("ceiling".into(), c.master_ceiling);
+            master.params.insert("muted".into(), if c.muted { 1.0 } else { 0.0 });
             doc.nodes.push(master);
 
             // The first node of the chain (the split, or the first block).
@@ -574,8 +585,12 @@ impl Rig {
             // The last block feeds the channel master. (A channel always has
             // at least one block here, so `last` is never the master.)
             doc.edges.push(EdgeDoc { from: [last, "out".into()], to: [master_id(&c.id), "in".into()] });
-            let port = ["a", "b", "c", "d"][ci.min(3)];
-            doc.edges.push(EdgeDoc { from: [master_id(&c.id), "out".into()], to: ["sum".to_string(), port.into()] });
+            // Muted channels do not feed the master sum, but their blocks stay
+            // compiled so routings can still tap them.
+            if !c.muted {
+                let port = ["a", "b", "c", "d"][ci.min(3)];
+                doc.edges.push(EdgeDoc { from: [master_id(&c.id), "out".into()], to: ["sum".to_string(), port.into()] });
+            }
         }
         // Unused sum inputs are tied to silence via a zero-gain gain node, so
         // the graph's "every input driven" rule holds without a special case.
@@ -673,16 +688,21 @@ impl Rig {
             if sources.is_empty() {
                 sources.push(IN.into());
             }
-            let (master_volume, master_ceiling) = doc
+            let (master_volume, master_ceiling, muted) = doc
                 .node(master)
-                .map(|n| (n.params.get("volume").copied().unwrap_or(0.0), n.params.get("ceiling").copied().unwrap_or(-1.0)))
-                .unwrap_or((0.0, -1.0));
+                .map(|n| {
+                    let vol = n.params.get("volume").copied().unwrap_or(0.0);
+                    let ceil = n.params.get("ceiling").copied().unwrap_or(-1.0);
+                    let mut_state = n.params.get("muted").copied().unwrap_or(0.0) != 0.0;
+                    (vol, ceil, mut_state)
+                })
+                .unwrap_or((0.0, -1.0, false));
             blocks.reverse();
             // The channel id is the master's prefix, so a source name in the
             // preset ("amp") matches the channel that owns "amp__master".
             let id = master.strip_suffix("__master").unwrap_or(master).to_string();
             let n = rig.channels.len() + 1;
-            rig.channels.push(Channel { id, name: format!("Channel {n}"), blocks, sources, master_volume, master_ceiling });
+            rig.channels.push(Channel { id, name: format!("Channel {n}"), blocks, sources, master_volume, master_ceiling, muted });
         }
         // A rig always shows the full set of channel slots. A preset with
         // fewer channels (every shipped one has one) gets empty slots rather
