@@ -117,6 +117,7 @@ a much harder reconnection story. **Snapshot, not deltas.**
           "type": "amp.basic",       // registry key
           "name": "Amp",             // display name (from the registry)
           "bypass": false,
+          "col": 0,                  // grid column (0..7); absent on legacy presets (defaults to 0)
           "params": { "voice": 0, "gain": 3.5, "bass": 0, "mid": 0,
                       "treble": 0, "level": -5.0 }
         }
@@ -258,3 +259,47 @@ and pushes a reading at 20 Hz to every connected client.
 The protocol has no version field. Both sides ship together; the state shape
 is additive (new fields are ignored by older clients). If a breaking change is
 ever needed, it gets a new port and a new `protocol` crate.
+
+## Grid layout
+
+Each channel strip is a row in a grid of 8 columns (0..7). Blocks are laid out
+in a column via the `col` field on every block in `state.channels[].blocks` and
+via the optional `col` argument to `addBlock` and the required `col` argument
+to `placeBlock`. Columns are unique within a channel — a block placed in an
+occupied column is refused with `ok: false`.
+
+### `addBlock` with `col`
+
+The `addBlock` command now accepts an optional `col` argument. When present it
+places the block directly into that column; when absent the engine picks a
+column:
+
+- If the channel is empty, column 0.
+- Otherwise the lowest free column to the right of the highest existing column
+  (i.e. `max_col + 1`).
+- If all columns to the right are full, the lowest free column anywhere.
+- If all 8 columns are full, returns `ok: false` with `"channel full (8 blocks)"`.
+
+### `placeBlock` — cross-channel move
+
+Moves a block from one channel to a column in another channel. The source block
+is removed from its original channel, and a new entry is added to the target
+channel at the given column. The block's id, type, name, and params are preserved.
+
+Args: `{ channel, block, toChannel, col }`. Errors include `no such channel`,
+`no such block`, `slot out of range` (col >= 8), `slot occupied`.
+
+### Later-slot rule
+
+When the UI drags a block from one strip to another, multiple columns may be
+available at the drop location. The engine picks the **highest free column**
+(highest `col` value < 8), not the lowest. This keeps existing blocks on the
+left and places the incoming block at the right edge.
+
+### Prune-on-move
+
+Dragging a block to a column that is already occupied by another block **prunes**
+that block from its original channel (the same as `removeBlock`). The pruned
+block then lands in the target channel at the given column. If the drag target
+column is empty, it simply occupies it. If the target column is the same as the
+source block's current column (no-op), the request is accepted silently.
