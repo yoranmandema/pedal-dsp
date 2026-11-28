@@ -13,7 +13,7 @@ const ID: &str = "dynamics.multiband_compressor";
 
 fn rig(bands: f32) -> (Doc, String) {
     let mut rig = Rig::new("mb");
-    let id = rig.add_block_as("ch1", ID, "Multiband", [0.0, 0.0]);
+    let id = rig.add_block_as("ch1", ID, "Multiband", [0.0, 0.0], None).unwrap();
     let mut doc = rig.to_doc();
     let n = doc.node_mut(&id).expect("multiband node");
     n.params.insert("bands".into(), bands);

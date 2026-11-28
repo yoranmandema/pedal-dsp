@@ -167,6 +167,7 @@ fn snapshot(sh: &Shared) -> Value {
                         "id": b.id,
                         "type": b.block,
                         "name": sh.registry.get(&b.block).map(|s| s.name).unwrap_or(&b.block),
+                        "col": b.col,
                         "bypass": b.bypass,
                         "params": Value::Object(params),
                     })
@@ -236,7 +237,7 @@ fn out_master() -> NodeDoc {
         params: [("volume".to_string(), 0.0), ("ceiling".to_string(), -1.0)].into_iter().collect(),
         bypass: false,
         pos: Some([1320.0, 400.0]),
-        model: None, curve: None,
+        model: None, curve: None, col: None,
     }
 }
 
@@ -253,7 +254,7 @@ fn bypass_doc() -> Doc {
         params: BTreeMap::new(),
         bypass: false,
         pos: Some([60.0, 400.0]),
-        model: None, curve: None,
+        model: None, curve: None, col: None,
     });
     doc.nodes.push(NodeDoc {
         id: "out".into(),
@@ -261,7 +262,7 @@ fn bypass_doc() -> Doc {
         params: BTreeMap::new(),
         bypass: false,
         pos: Some([1400.0, 400.0]),
-        model: None, curve: None,
+        model: None, curve: None, col: None,
     });
     doc.nodes.push(out_master());
     doc.edges.push(EdgeDoc {
@@ -447,7 +448,7 @@ fn set_bypass(sh: &Shared, channel: &str, block: &str, on: bool) -> Result<(), S
     Ok(())
 }
 
-fn add_block(sh: &Shared, channel: &str, btype: &str, name: &str) -> Result<(), String> {
+fn add_block(sh: &Shared, channel: &str, btype: &str, name: &str, col: Option<u8>) -> Result<(), String> {
     if sh.registry.get(btype).is_none() {
         return Err(format!("unknown block type: {btype}"));
     }
@@ -457,7 +458,10 @@ fn add_block(sh: &Shared, channel: &str, btype: &str, name: &str) -> Result<(), 
             return Err(format!("no such channel: {channel}"));
         }
         // Placeholder position; the UI does not use it.
-        rig.add_block_as(channel, btype, name, [0.0, 0.0]);
+        match rig.add_block_as(channel, btype, name, [0.0, 0.0], col) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
     }
     rebuild(sh)
 }
@@ -515,6 +519,21 @@ fn set_routing_gain(sh: &Shared, id: &str, gain: f32) -> Result<(), String> {
 fn list_routings(sh: &Shared) -> Value {
     let rig = sh.rig.lock().unwrap();
     json!({ "routings": serde_json::to_value(&rig.routings).unwrap_or_else(|_| json!([])) })
+}
+
+/// Move a block from one channel to a column in another channel.
+fn place_block(
+    sh: &Shared,
+    channel: &str,
+    block: &str,
+    to_channel: &str,
+    col: u8,
+) -> Result<(), String> {
+    {
+        let mut rig = sh.rig.lock().unwrap();
+        rig.place_block(channel, block, to_channel, col)?;
+    }
+    rebuild(sh)
 }
 
 /// Parse `{ "channel": "...", "block": "..." }` from a command's args.
@@ -644,7 +663,15 @@ fn apply(sh: &Shared, cmd: &str, args: &Value) -> Result<Value, String> {
                     set_bypass(sh, &s("channel").ok_or("channel")?, &s("block").ok_or("block")?, b("bypass"))?;
                 }
                 "addBlock" => {
-                    add_block(sh, &s("channel").ok_or("channel")?, &s("type").ok_or("type")?, &s("name").unwrap_or_default())?;
+                    let col = args.get("col").and_then(|v| v.as_u64()).map(|v| v as u8);
+                    add_block(sh, &s("channel").ok_or("channel")?, &s("type").ok_or("type")?, &s("name").unwrap_or_default(), col)?;
+                }
+                "placeBlock" => {
+                    let to_channel = args.get("toChannel").and_then(|v| v.as_str()).ok_or("toChannel")?;
+                    let block = s("block").ok_or("block")?;
+                    let col = args.get("col").and_then(|v| v.as_u64()).ok_or("col")?;
+                    let col = col as u8;
+                    place_block(sh, &s("channel").ok_or("channel")?, &block, to_channel, col)?;
                 }
                 "removeBlock" => {
                     remove_block(sh, &s("channel").ok_or("channel")?.as_str(), &s("block").ok_or("block")?.as_str())?;

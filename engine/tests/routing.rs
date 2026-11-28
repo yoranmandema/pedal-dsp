@@ -17,12 +17,12 @@ use pedal_engine::channels::{master_id, Rig, ROUTING_GAIN_PREFIX, ROUTING_MIX_PR
 use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::Message;
 
-/// A two-channel rig: `ch1` = Amp → Delay, `ch2` = Reverb.
+/// A two-channel rig: `ch1` = Amp(col 0) → Delay(col 1), `ch2` = Reverb(col 2).
 fn rig_with_two_channels() -> (Rig, String, String, String) {
     let mut rig = Rig::new("routed");
-    let amp = rig.add_block_as("ch1", "amp.basic", "Amp", [0.0, 0.0]);
-    let delay = rig.add_block_as("ch1", "time.delay", "Delay", [0.0, 0.0]);
-    let reverb = rig.add_block_as("ch2", "time.reverb", "Reverb", [0.0, 0.0]);
+    let amp = rig.add_block_as("ch1", "amp.basic", "Amp", [0.0, 0.0], Some(0)).unwrap();
+    let delay = rig.add_block_as("ch1", "time.delay", "Delay", [0.0, 0.0], Some(1)).unwrap();
+    let reverb = rig.add_block_as("ch2", "time.reverb", "Reverb", [0.0, 0.0], Some(2)).unwrap();
     (rig, amp, delay, reverb)
 }
 
@@ -286,7 +286,7 @@ fn a_routing_taps_the_source_and_sums_into_the_destination() {
 #[test]
 fn two_routings_out_of_one_source_both_reach_their_destinations() {
     let (mut rig, amp, delay, reverb) = rig_with_two_channels();
-    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0]);
+    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0], Some(3)).unwrap();
     let (s1, d1) = route(("ch1", &amp), ("ch2", &reverb));
     let (s2, d2) = route(("ch1", &amp), ("ch3", &ch3));
     let first = rig.create_routing(&s1, &d1).unwrap();
@@ -307,7 +307,7 @@ fn two_routings_out_of_one_source_both_reach_their_destinations() {
 #[test]
 fn two_routings_into_one_destination_chain_two_mixes() {
     let (mut rig, amp, _delay, reverb) = rig_with_two_channels();
-    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0]);
+    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0], Some(1)).unwrap();
     let (s1, d1) = route(("ch1", &amp), ("ch2", &reverb));
     let (s2, d2) = route(("ch3", &ch3), ("ch2", &reverb));
     let first = rig.create_routing(&s1, &d1).unwrap();
@@ -402,7 +402,7 @@ fn a_disabled_routing_leaves_the_graph_untouched() {
 #[test]
 fn a_routed_graph_validates_and_compiles() {
     let (mut rig, amp, _delay, reverb) = rig_with_two_channels();
-    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0]);
+    let ch3 = rig.add_block_as("ch3", "time.reverb", "Reverb", [0.0, 0.0], Some(1)).unwrap();
     let (s1, d1) = route(("ch1", &amp), ("ch2", &reverb));
     let (s2, d2) = route(("ch1", &amp), ("ch3", &ch3));
     let first = rig.create_routing(&s1, &d1).unwrap();
